@@ -1,0 +1,245 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Grow 2 · the show</title>
+<style>
+ :root{--bg:#121210;--ink:#eae6dc;--muted:#9a948a;--line:#2a2824;--warm:#e8c36a}
+ html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,sans-serif;overflow:hidden}
+ #app{display:grid;grid-template-columns:240px 1fr 150px;grid-template-rows:52px 1fr 92px;height:100vh}
+ #top{grid-column:1/4;display:flex;align-items:center;gap:14px;padding:0 16px;border-bottom:1px solid var(--line)}
+ #top h1{font-size:17px;margin:0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ #top .sub{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ #top .spacer{flex:1}
+ button,select{background:#262521;color:var(--ink);border:1px solid #3a3833;border-radius:5px;padding:6px 10px;cursor:pointer;font:inherit}
+ button:hover{background:#33312c} button.big{background:var(--warm);color:#1a1508;border-color:var(--warm);font-weight:600}
+ #set{border-right:1px solid var(--line);overflow:auto;padding:10px}
+ #set h3{margin:4px 6px 8px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+ .piece{padding:6px 8px;border-radius:6px;cursor:pointer;display:flex;gap:8px;align-items:baseline}
+ .piece:hover{background:#1c1b18} .piece.now{background:#2d2a1f;outline:1px solid #4a4330}
+ .piece .n{color:var(--muted);font-size:11px;width:16px;text-align:right} .piece .nm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .piece .g{color:var(--muted);font-size:11px}
+ #stagewrap{position:relative;overflow:hidden}
+ canvas#stage{display:block;width:100%;height:100%}
+ #overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(18,18,16,.86)}
+ #overlay div{text-align:center;max-width:420px;color:var(--muted)} #overlay h2{color:var(--ink);margin:0 0 10px}
+ #dial{border-left:1px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:10px;user-select:none}
+ #dial .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+ #knob{width:46px;height:60%;-webkit-appearance:none;appearance:none;writing-mode:vertical-lr;direction:rtl;background:transparent;cursor:ns-resize}
+ #knob::-webkit-slider-runnable-track{width:14px;background:linear-gradient(#e8c36a,#4a4740 50%,#6b3b3b);border-radius:7px}
+ #knob::-webkit-slider-thumb{-webkit-appearance:none;width:46px;height:26px;border-radius:8px;background:#f1ece0;border:2px solid #1a1508;margin-left:-16px;box-shadow:0 2px 8px #0008}
+ #knob::-moz-range-track{width:14px;background:linear-gradient(#e8c36a,#4a4740 50%,#6b3b3b);border-radius:7px}
+ #knob::-moz-range-thumb{width:46px;height:26px;border-radius:8px;background:#f1ece0;border:2px solid #1a1508}
+ #mood{font-size:30px;line-height:1} #moodtxt{font-size:12px;color:var(--muted);text-align:center;min-height:2.8em}
+ #bottom{grid-column:1/4;border-top:1px solid var(--line);display:grid;grid-template-rows:58px 22px;padding:6px 16px 4px}
+ canvas#roll{display:block;width:100%;height:58px}
+ #hint{color:var(--muted);font-size:11px;display:flex;gap:18px;align-items:center}
+ #hint b{color:var(--ink);font-weight:500}
+ a{color:var(--muted)}
+</style></head><body>
+<div id="app">
+ <div id="top">
+  <h1 id="title">the show</h1><span class="sub" id="subtitle">pick a set and press start</span><span class="spacer"></span>
+  <select id="mode" title="how the set list is chosen">
+   <option value="tour">tour: new pieces plus a few elders</option>
+   <option value="newest">newest arrivals</option>
+   <option value="walk">a walk across the map</option>
+   <option value="lineage">one family, oldest to newest</option>
+   <option value="founders">the founders</option>
+  </select>
+  <button onclick="newSet()">new set</button>
+  <button id="startbtn" class="big" onclick="start()">start</button>
+  <button onclick="prev()" title="left arrow">&#9664;</button>
+  <button onclick="again()" title="r">&#8635; again</button>
+  <button onclick="next(true)" title="space">next &#9654;</button>
+  <a href="/map" target="_blank" title="the grid view">map</a>
+ </div>
+ <div id="set"><h3>tonight</h3><div id="pieces"></div></div>
+ <div id="stagewrap"><canvas id="stage"></canvas>
+  <div id="overlay"><div><h2>Grow 2</h2>A set of pieces from the terrarium will play in a row. Each instrument in a piece is a performer. Turn the dial on the right while you listen: up when you like it, down when you do not. That is the vote. <br><br><button class="big" onclick="start()">start the show</button></div></div>
+ </div>
+ <div id="dial"><div class="lbl">love it</div><input id="knob" type="range" min="-100" max="100" value="0" step="1"><div class="lbl">not for me</div><div id="mood">&#128528;</div><div id="moodtxt">turn me while it plays</div></div>
+ <div id="bottom"><canvas id="roll"></canvas><div id="hint"><span><b>&uarr;&darr;</b> dial</span><span><b>space</b> next</span><span><b>&larr;</b> back</span><span><b>r</b> again</span><span><b>wheel</b> over the stage also turns the dial</span><span id="facts" style="margin-left:auto"></span></div></div>
+</div>
+<audio id="audio" preload="auto"></audio>
+<script>
+// ----------------------------------------------------------------- state
+let set = [], idx = -1, piece = null, started = false;
+let dial = 0, lastSent = 0, lastDialSent = -1;
+const audio = document.getElementById('audio');
+const stage = document.getElementById('stage'), sctx = stage.getContext('2d');
+const roll = document.getElementById('roll'), rctx = roll.getContext('2d');
+const knob = document.getElementById('knob');
+let actx = null, analyser = null, fft = null, level = 0;
+const PAL = ['#e8c36a','#7fc8a9','#d98a7a','#8fa8e0','#c9a0dc','#a4c86a','#e0a06a','#7ac8d9'];
+let performers = []; // {instr,label,x,y,r,energy,hold,blink,color,events}
+let ripples = [];
+const queue = [];
+
+// ----------------------------------------------------------------- set list
+async function newSet(){
+  const mode = document.getElementById('mode').value;
+  set = await (await fetch('/setlist?mode='+mode+'&n=12')).json();
+  idx = -1; piece = null; renderSet();
+  if (set.length) { document.getElementById('subtitle').textContent = set.length+' pieces tonight'; if (started) next(false); }
+  else document.getElementById('subtitle').textContent = 'the archive is empty; run python -m grow init';
+}
+function renderSet(){
+  const el = document.getElementById('pieces'); el.innerHTML = '';
+  set.forEach((p,i)=>{ const d=document.createElement('div'); d.className='piece'+(i===idx?' now':'');
+    d.innerHTML='<span class="n">'+(i+1)+'</span><span class="nm">'+esc(p.name)+'</span><span class="g">g'+p.generation+'</span>';
+    d.onclick=()=>{ idx=i-1; next(false); }; el.appendChild(d); });
+}
+function esc(s){ return String(s).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+// ----------------------------------------------------------------- playback
+function ensureAudio(){
+  if (actx) return;
+  actx = new (window.AudioContext||window.webkitAudioContext)();
+  const src = actx.createMediaElementSource(audio);
+  analyser = actx.createAnalyser(); analyser.fftSize = 512; analyser.smoothingTimeConstant = 0.7;
+  src.connect(analyser); analyser.connect(actx.destination);
+  fft = new Uint8Array(analyser.frequencyBinCount);
+}
+async function start(){
+  ensureAudio(); if (actx.state==='suspended') await actx.resume();
+  started = true; document.getElementById('overlay').style.display='none';
+  document.getElementById('startbtn').textContent = 'playing';
+  if (!set.length) await newSet();
+  if (set.length && !piece) next(false);
+}
+function load(i){
+  idx = (i + set.length) % set.length; piece = set[idx]; renderSet();
+  document.getElementById('title').textContent = piece.name;
+  const lin = piece.lineage.slice(1,4).map(a=>a.name).join(' ← ');
+  document.getElementById('subtitle').textContent = 'gen '+piece.generation+' · '+piece.author+(piece.note?' · '+piece.note:'')+(lin?'  ·  from '+lin:'');
+  document.getElementById('facts').textContent = piece.facts;
+  buildPerformers(); ripples = [];
+  audio.src = '/clips/'+piece.id+'/clip.wav'; audio.currentTime = 0;
+  audio.play().catch(()=>{});
+  send({kind:'play', clip:piece.id, value:1, pos:0});
+}
+function next(skipped){
+  if (!set.length) return;
+  if (skipped && piece && audio.duration) send({kind:'skip', clip:piece.id, value:dial, pos:audio.currentTime/audio.duration});
+  load(idx+1);
+}
+function prev(){ if (set.length) load(idx-1); }
+function again(){ if (!piece) return; audio.currentTime=0; audio.play(); send({kind:'play', clip:piece.id, value:1, pos:0}); }
+audio.addEventListener('ended', ()=>{ if (piece) send({kind:'end', clip:piece.id, value:dial, pos:1}); setTimeout(()=>{ if (started) next(false); }, 1400); });
+
+// ----------------------------------------------------------------- the dial
+function setDial(v){ dial = Math.max(-1, Math.min(1, v)); knob.value = Math.round(dial*100); moodFace(); }
+knob.addEventListener('input', ()=>{ dial = knob.value/100; moodFace(); });
+function moodFace(){
+  const f = dial>0.6?'\u{1F60D}':dial>0.2?'\u{1F642}':dial>-0.2?'\u{1F610}':dial>-0.6?'\u{1F615}':'\u{1F62C}';
+  document.getElementById('mood').textContent = f;
+  document.getElementById('moodtxt').textContent = dial>0.6?'they can feel it':dial>0.2?'warming':dial>-0.2?'listening':dial>-0.6?'losing you':'they know';
+}
+document.getElementById('stagewrap').addEventListener('wheel', e=>{ e.preventDefault(); setDial(dial - Math.sign(e.deltaY)*0.08); }, {passive:false});
+window.addEventListener('keydown', e=>{
+  if (e.target.tagName==='SELECT') return;
+  if (e.key==='ArrowUp'){ setDial(dial+0.1); e.preventDefault(); }
+  else if (e.key==='ArrowDown'){ setDial(dial-0.1); e.preventDefault(); }
+  else if (e.key===' '||e.key==='ArrowRight'){ if(started) next(true); e.preventDefault(); }
+  else if (e.key==='ArrowLeft'){ prev(); e.preventDefault(); }
+  else if (e.key==='r'){ again(); }
+});
+// dial readings go out when they change and every two seconds while playing
+function tickDial(now){
+  if (!piece || audio.paused || !audio.duration) return;
+  const pos = audio.currentTime/audio.duration;
+  if (Math.abs(dial-lastDialSent) > 0.04 && now-lastSent > 150 || now-lastSent > 2000){
+    queue.push({kind:'dial', clip:piece.id, value:dial, pos:pos}); lastSent = now; lastDialSent = dial;
+  }
+}
+function send(ev){ queue.push(ev); }
+setInterval(()=>{ if(!queue.length) return; const b=queue.splice(0,queue.length);
+  fetch('/event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).catch(()=>{}); }, 1000);
+window.addEventListener('beforeunload', ()=>{ if(queue.length) navigator.sendBeacon && navigator.sendBeacon('/event', new Blob([JSON.stringify(queue)],{type:'application/json'})); });
+
+// ----------------------------------------------------------------- performers
+function buildPerformers(){
+  const W = stage.width, H = stage.height;
+  const n = Math.max(1, piece.performers.length);
+  performers = piece.performers.map((p,i)=>{
+    const t = n===1 ? 0.5 : i/(n-1);
+    const ang = Math.PI*(1.25 + 0.5*t);             // a shallow arc, middle performer furthest back
+    const cx = W*0.5 + Math.cos(ang)*W*0.4*(n>1?1:0), cy = H*0.62 + Math.sin(ang)*H*0.18;
+    const ev = piece.events.filter(e=>e.instr===p.instr);
+    const busy = ev.reduce((a,e)=>a+Math.min(e.dur,4),0)/Math.max(piece.seconds,1);
+    return {instr:p.instr, label:p.label, x:cx, y:cy, r:Math.min(W,H)*(0.07+0.05*Math.min(busy,1)), energy:0, hold:0,
+            blink:Math.random()*4, color:PAL[i%PAL.length], events:ev, cursor:0, sway:Math.random()*6.28, asleep:ev.length===0, lastNote:-9, pitch:0};
+  });
+}
+function fit(){
+  const r = stage.getBoundingClientRect(); stage.width = Math.max(300, r.width|0); stage.height = Math.max(200, r.height|0);
+  const rr = roll.getBoundingClientRect(); roll.width = Math.max(300, rr.width|0); roll.height = Math.max(20, rr.height|0);
+  if (piece) buildPerformers();
+}
+window.addEventListener('resize', fit); fit();
+
+function draw(ts){
+  requestAnimationFrame(draw);
+  const W = stage.width, H = stage.height, t = audio.currentTime||0, playing = piece && !audio.paused;
+  if (analyser){ analyser.getByteFrequencyData(fft); let s=0; for(let i=0;i<fft.length;i++) s+=fft[i]; level = level*0.8 + (s/fft.length/255)*0.2; }
+  tickDial(ts);
+  // room
+  sctx.clearRect(0,0,W,H);
+  const g = sctx.createRadialGradient(W/2, H*0.55, 10, W/2, H*0.55, Math.max(W,H)*0.7);
+  g.addColorStop(0, `rgba(232,195,106,${0.10+0.35*level+0.08*Math.max(dial,0)})`); g.addColorStop(1, 'rgba(18,18,16,0)');
+  sctx.fillStyle = g; sctx.fillRect(0,0,W,H);
+  // floor
+  sctx.fillStyle = '#1a1915'; sctx.beginPath(); sctx.ellipse(W/2, H*0.8, W*0.46, H*0.12, 0, 0, 6.283); sctx.fill();
+  // spectrum as a soft horizon
+  if (fft){ sctx.save(); sctx.globalAlpha = 0.18; sctx.fillStyle = '#e8c36a';
+    const n = 48, bw = W/n; for(let i=0;i<n;i++){ const v = fft[Math.floor(i*fft.length/n/2)]/255; sctx.fillRect(i*bw+1, H*0.8-v*H*0.25, bw-2, v*H*0.25);} sctx.restore(); }
+  // performers
+  for (const p of performers){
+    // note events kick energy; sustained notes hold it
+    while (p.cursor < p.events.length && p.events[p.cursor].start <= t){ const e = p.events[p.cursor++];
+      if (t - e.start < 0.25){ p.energy = Math.min(1.6, p.energy + 0.5 + e.amp*0.8); p.lastNote = t; p.pitch = e.pitch;
+        ripples.push({x:p.x, y:p.y, r:p.r, a:0.6*(0.4+e.amp), color:p.color}); } }
+    if (!playing || t < 0.05){ p.cursor = 0; }
+    p.hold = p.events.some(e=>t>=e.start && t<e.start+e.dur) ? 1 : 0;
+    p.energy *= 0.92; const en = Math.min(1.5, p.energy + p.hold*0.25);
+    p.sway += 0.02 + en*0.03; p.blink -= 1/60; if (p.blink < -0.12) p.blink = 2.5 + Math.random()*4;
+    const lift = (p.pitch ? Math.log2(Math.max(p.pitch,30)/30)/8 : 0.4);
+    const bob = Math.sin(p.sway)*3 + (p.hold? -en*6 : 0) - lift*14*en;
+    const r = p.r*(1 + en*0.28), x = p.x, y = p.y + bob;
+    const dim = p.asleep ? 0.35 : 1;
+    // shadow
+    sctx.fillStyle = 'rgba(0,0,0,.35)'; sctx.beginPath(); sctx.ellipse(x, p.y + p.r*0.95, r*0.9, r*0.22, 0, 0, 6.283); sctx.fill();
+    // body
+    sctx.save(); sctx.globalAlpha = dim; sctx.fillStyle = p.color; sctx.shadowColor = p.color; sctx.shadowBlur = 18*en + 6*level*10;
+    sctx.beginPath(); sctx.ellipse(x, y, r*(1+en*0.05), r*(1-en*0.08), 0, 0, 6.283); sctx.fill(); sctx.restore();
+    // eyes follow the dial: up when loved, sideways when unsure, down when not
+    const look = dial*0.35, ex = r*0.33, ey = -r*0.12, er = r*0.17;
+    for (const s of [-1,1]){
+      sctx.fillStyle = '#f6f2e8'; sctx.beginPath(); sctx.ellipse(x+s*ex, y+ey, er, p.blink<0||p.asleep? er*0.08: er*1.15, 0, 0, 6.283); sctx.fill();
+      if (!(p.blink<0||p.asleep)){ sctx.fillStyle = '#1a1508'; sctx.beginPath(); sctx.arc(x+s*ex + s*er*0.1, y+ey - look*er*0.9 + (dial<-0.3? er*0.25:0), er*0.5, 0, 6.283); sctx.fill(); }
+    }
+    // mouth: a smile proportional to the dial, open while playing
+    const mw = r*0.42, my = y + r*0.3, curve = dial*r*0.28, open = p.hold? r*0.12*(0.5+en*0.5): 0;
+    sctx.strokeStyle = '#1a1508'; sctx.lineWidth = Math.max(2, r*0.06); sctx.lineCap='round';
+    sctx.beginPath(); sctx.moveTo(x-mw, my - curve*0.4); sctx.quadraticCurveTo(x, my + curve + open, x+mw, my - curve*0.4); sctx.stroke();
+    if (open>1){ sctx.fillStyle='#1a1508'; sctx.beginPath(); sctx.moveTo(x-mw*0.8, my - curve*0.3); sctx.quadraticCurveTo(x, my + curve + open*1.6, x+mw*0.8, my - curve*0.3); sctx.quadraticCurveTo(x, my + curve*0.6, x-mw*0.8, my - curve*0.3); sctx.fill(); }
+    // name tag
+    sctx.fillStyle = 'rgba(234,230,220,.75)'; sctx.font = `${Math.max(11, r*0.28)|0}px system-ui`; sctx.textAlign='center';
+    sctx.fillText(p.asleep ? p.label+' (resting)' : p.label, x, p.y + r*1.6);
+  }
+  // ripples
+  for (const rp of ripples){ rp.r += 2.2; rp.a *= 0.93; sctx.strokeStyle = rp.color; sctx.globalAlpha = rp.a; sctx.lineWidth = 2; sctx.beginPath(); sctx.arc(rp.x, rp.y, rp.r, 0, 6.283); sctx.stroke(); }
+  sctx.globalAlpha = 1; ripples = ripples.filter(r=>r.a>0.02);
+  if (!piece){ sctx.fillStyle='#6a665c'; sctx.font='16px system-ui'; sctx.textAlign='center'; sctx.fillText('empty stage', W/2, H*0.5); }
+  drawRoll(t);
+}
+function drawRoll(t){
+  const W = roll.width, H = roll.height; rctx.clearRect(0,0,W,H);
+  if (!piece) return;
+  const dur = Math.max(piece.seconds, 1), n = Math.max(1, performers.length), lane = H/n;
+  performers.forEach((p,i)=>{ rctx.fillStyle = p.color; rctx.globalAlpha = 0.55;
+    for (const e of p.events){ const x0 = e.start/dur*W, w = Math.max(2, e.dur/dur*W); const h = lane*(0.35+0.55*e.amp);
+      rctx.globalAlpha = (t>=e.start && t<e.start+e.dur)? 1 : 0.5; rctx.fillRect(x0, i*lane + (lane-h)/2, w, h); } });
+  rctx.globalAlpha = 1; rctx.fillStyle = '#e8c36a'; rctx.fillRect(t/dur*W, 0, 2, H);
+}
+requestAnimationFrame(draw);
+newSet();
+</script></body></html>

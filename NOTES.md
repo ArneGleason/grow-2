@@ -56,3 +56,34 @@ Next: Arne installs csound, runs init and twenty generations, opens the
 sheet, listens for an evening, and writes down how many clips he would play
 twice. Then `python -m grow taste`, twenty more generations, and the same
 question.
+
+## 2026-10-17 — the show
+
+Arne ran the kernel on the Mac and got the grid up. Verdict: tedious, not
+fun. He wants performances laid out for him, a dial to turn while they play
+instead of a thumb per clip, and performers he can watch.
+
+Built: `/` is now the show. A set list (tour, newest, a walk across the map,
+one family oldest to newest, or the founders) plays in a row. Each
+instrument in a piece's program is a performer on the stage, drawn from the
+score: it pulses on its note events, holds while a note sustains, sits
+dimmed and resting if it has no part in this piece, and its eyes and mouth
+follow the mood dial. A piano-roll strip along the bottom shows the piece
+coming. The dial is a vertical slider, the arrow keys, or the mouse wheel
+over the stage. Dial readings go out whenever the dial moves and every two
+seconds while a piece plays, tagged with the position in the piece. Skips
+before a third of a piece count against it. The taste probe reads all of
+this (`taste.read_events`).
+
+Why it matters beyond fun: a continuous dial through a whole piece is far
+richer than one vote per clip, and later it can say which moments were
+loved, not only which pieces.
+
+Verified headless: the page loads, a set plays, the dial changes, events
+post with positions, the map page still works. Nobody has watched it yet.
+
+Soft spots: performer amplitude and pitch are guessed from p-fields (the
+first value in 0..1, the first in 20..8000), which is only a picture.
+Performers are per piece; they do not yet persist as characters across a
+family. That is the obvious next step once the show is fun to sit through:
+the performers become the players, and each player gets an ear.

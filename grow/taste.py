@@ -25,29 +25,46 @@ MIN_VOTED_CLIPS = 12
 
 
 def read_events(path: Path) -> dict[str, float]:
-    """Fold events into one preference value per clip.
+    """Fold the sheet's events into one preference value per clip.
 
-    vote up = +1, vote down = -1, each replay after the first = +0.5 (capped).
+    - dial: the mood dial's position while the clip played, averaged, times 2
+    - vote: thumbs up +1, thumbs down -1
+    - play: each replay after the first +0.5, capped at +2
+    - skip: moving on before a third of the clip had played, -1
+    The sum is clipped to [-3, 3]. A clip counts as voted when it has any
+    dial reading, vote, skip, or replay.
     """
     if not path.exists():
         return {}
     votes: dict[str, float] = defaultdict(float)
     plays: dict[str, int] = defaultdict(int)
+    dial: dict[str, list[float]] = defaultdict(list)
+    skips: dict[str, float] = defaultdict(float)
     with path.open() as fh:
         for row in csv.DictReader(fh):
             cid = row.get("clip", "")
             if not cid:
                 continue
             kind = row.get("kind")
+            try:
+                value = float(row.get("value", 0) or 0)
+                pos = float(row.get("pos", 0) or 0)
+            except ValueError:
+                continue
             if kind == "vote":
-                votes[cid] += float(row.get("value", 0) or 0)
+                votes[cid] += value
             elif kind == "play":
                 plays[cid] += 1
+            elif kind == "dial":
+                dial[cid].append(max(-1.0, min(1.0, value)))
+            elif kind == "skip" and pos < 0.34:
+                skips[cid] -= 1.0
     out: dict[str, float] = {}
-    for cid in set(votes) | set(plays):
+    for cid in set(votes) | set(plays) | set(dial) | set(skips):
         replay = min(max(plays[cid] - 1, 0) * 0.5, 2.0)
-        if cid in votes or plays[cid] > 1:
-            out[cid] = float(np.clip(votes[cid], -2, 2) + replay)
+        mood = 2.0 * float(np.mean(dial[cid])) if dial[cid] else 0.0
+        if cid in votes or cid in dial or cid in skips or plays[cid] > 1:
+            out[cid] = float(np.clip(np.clip(votes[cid], -2, 2) + replay + mood + skips[cid], -3, 3))
     return out
 
 

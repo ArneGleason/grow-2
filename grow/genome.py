@@ -97,3 +97,65 @@ def load(clip_dir: Path) -> tuple[Genome, dict]:
     text = (clip_dir / "genome.csd").read_text()
     fields = {k: meta[k] for k in ("id", "name", "parent", "parents", "generation", "author", "note", "created") if k in meta}
     return Genome(text=text, **fields), meta
+
+
+# ------------------------------------------------------------- for the stage
+
+I_LINE_RE = re.compile(r"^\s*i\s*(\d+)\s+(\S+)\s+(\S+)(.*)$")
+
+
+def instrument_labels(text: str) -> dict[int, str]:
+    """instr number -> the comment line just above it, or 'voice N'."""
+    labels: dict[int, str] = {}
+    last_comment = ""
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith(";"):
+            last_comment = s.lstrip("; ").strip()
+            continue
+        m = re.match(r"^instr\s+(\d+)", s)
+        if m:
+            n = int(m.group(1))
+            labels[n] = last_comment or f"voice {n}"
+            last_comment = ""
+            continue
+        if s:
+            last_comment = ""
+    return labels
+
+
+def score_events(text: str, max_seconds: float = 30.0) -> list[dict]:
+    """The score's note events as [{instr, start, dur, amp, pitch}], for animation.
+
+    amp is a guess: the first p-field in (0, 1]; pitch the first in [20, 8000].
+    These drive pictures, not sound, so a wrong guess costs nothing.
+    """
+    out = []
+    m = SCORE_RE.search(text)
+    if not m:
+        return out
+    for line in m.group(1).splitlines():
+        if line.strip() == "e":
+            break
+        im = I_LINE_RE.match(line)
+        if not im:
+            continue
+        try:
+            start, dur = float(im.group(2)), float(im.group(3))
+        except ValueError:
+            continue
+        if start > max_seconds:
+            continue
+        rest = []
+        for tok in im.group(4).split():
+            if tok.startswith(";"):
+                break
+            try:
+                rest.append(float(tok))
+            except ValueError:
+                pass
+        amp = next((v for v in rest if 0 < v <= 1.0), 0.5)
+        pitch = next((v for v in rest if 20 <= v <= 8000), 0.0)
+        out.append({"instr": int(im.group(1)), "start": start, "dur": max(dur, 0.05), "amp": amp, "pitch": pitch})
+    out.sort(key=lambda e: e["start"])
+    return out

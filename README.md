@@ -27,10 +27,15 @@ macOS, `apt install csound` on Debian or Ubuntu). macOS ships only
     pip install -e .                # numpy, scipy, soundfile
     python -m grow init             # render the six founders in seeds/ into archive/
     python -m grow run -g 20 -b 8   # grow for 20 generations, 8 children each
-    python -m grow sheet            # listen at http://127.0.0.1:8765
+    python -m grow sheet            # the show, at http://127.0.0.1:8765
 
-Then listen for an evening. Every play and every thumbs up or down is
-recorded. When a dozen clips have votes:
+Then watch the show. A set of pieces plays in a row; each instrument in a
+piece is a performer on the stage, playing its part. Turn the dial on the
+right while you listen, up when you like it and down when you do not, and
+the performers react. The dial's position through each piece, every skip,
+and every replay are recorded; that is the vote. The grid of niches is
+still there at `/map` for when you want to look rather than watch. When a
+dozen pieces have been heard with the dial moving:
 
     python -m grow taste            # train the taste probe, rescore the map
     python -m grow run -g 20        # the map now grows toward what you kept
@@ -43,7 +48,7 @@ Optional ears and minds:
 The archive directory is the terrarium. It is not committed; the source is
 the seeds and the loop.
 
-## What you are looking at
+## What the map shows (at `/map`)
 
 The map has two axes: how many events per second (left sparse, right dense)
 and how bright (bottom dark, top bright). Each cell holds up to three clips.

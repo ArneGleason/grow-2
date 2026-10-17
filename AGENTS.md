@@ -29,7 +29,7 @@ plan document to keep in sync.
     python -m grow init             # render the founders in seeds/ into archive/
     python -m grow run -g 20 -b 8   # grow: 20 generations of 8 children
     python -m grow run -g 20 --mind # let a local Ollama model author some children
-    python -m grow sheet            # listen at http://127.0.0.1:8765 and vote
+    python -m grow sheet            # the show at http://127.0.0.1:8765 (grid at /map)
     python -m grow taste            # train the taste probe from the votes, rescore
 
 Set `GROW_MODEL` to a tag from `ollama list`. Install the `clap` extra for the
