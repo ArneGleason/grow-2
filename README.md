@@ -18,9 +18,13 @@ Those two files are the whole doctrine. There is no plan document.
 ## Run it
 
 Needs Python 3.11+ and Csound 6 on the PATH (`brew install csound` on
-macOS, `apt install csound` on Debian or Ubuntu).
+macOS, `apt install csound` on Debian or Ubuntu). macOS ships only
+`python3`, so make a virtual environment first; inside it, `python` and
+`pip` exist and nothing touches the system Python.
 
-    pip install -e .
+    python3 -m venv .venv
+    source .venv/bin/activate       # again in every new terminal
+    pip install -e .                # numpy, scipy, soundfile
     python -m grow init             # render the six founders in seeds/ into archive/
     python -m grow run -g 20 -b 8   # grow for 20 generations, 8 children each
     python -m grow sheet            # listen at http://127.0.0.1:8765

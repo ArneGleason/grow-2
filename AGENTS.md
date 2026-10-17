@@ -24,6 +24,7 @@ plan document to keep in sync.
 
 ## Running it
 
+    python3 -m venv .venv && source .venv/bin/activate
     pip install -e .                # numpy, scipy, soundfile; needs csound 6 on PATH
     python -m grow init             # render the founders in seeds/ into archive/
     python -m grow run -g 20 -b 8   # grow: 20 generations of 8 children
