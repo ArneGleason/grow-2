@@ -31,8 +31,12 @@ def read_events(path: Path) -> dict[str, float]:
     - vote: thumbs up +1, thumbs down -1
     - play: each replay after the first +0.5, capped at +2
     - skip: moving on before a third of the clip had played, -1
+    - encourage / silence (the show): +1 / -1, like a vote
+    - move (the show): the player was dragged; value is front-ness in [-1, 1], half weight
+    - moment (the show): the listener kept this scene, +1
+    - swap (the show): the band swapped this piece out under disapproval, -0.5
     The sum is clipped to [-3, 3]. A clip counts as voted when it has any
-    dial reading, vote, skip, or replay.
+    of these.
     """
     if not path.exists():
         return {}
@@ -53,6 +57,14 @@ def read_events(path: Path) -> dict[str, float]:
                 continue
             if kind == "vote":
                 votes[cid] += value
+            elif kind in ("encourage", "moment"):
+                votes[cid] += 1.0
+            elif kind == "silence":
+                votes[cid] -= 1.0
+            elif kind == "move":
+                votes[cid] += 0.5 * max(-1.0, min(1.0, value))
+            elif kind == "swap":
+                votes[cid] -= 0.5
             elif kind == "play":
                 plays[cid] += 1
             elif kind == "dial":

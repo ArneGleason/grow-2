@@ -42,6 +42,7 @@ class Grower:
         self.use_embedding = embedding_available() if use_embedding is None else use_embedding
         self.probe = Probe.load(self.root / "taste.json")
         self.recent: list[str] = []
+        self.born: list[dict] = []   # clips kept in this session, for the show to announce
 
     def say(self, msg: str) -> None:
         if self.verbose:
@@ -111,6 +112,9 @@ class Grower:
         if kept:
             self.recent.append(clip.id)
             self.recent = self.recent[-20:]
+            parent = self.archive.clips.get(genome.parent) if genome.parent else None
+            self.born.append({"id": clip.id, "name": clip.genome.name, "author": genome.author,
+                              "parent": parent.genome.name if parent else None, "family": self.archive.family_of(clip.id)})
         else:
             clip.status = "declined"
             self.archive.clips[clip.id] = clip
@@ -126,10 +130,12 @@ class Grower:
                 n += 1
         return n
 
-    def generation(self, batch: int = 8, mind_share: float = 0.3) -> int:
+    def generation(self, batch: int = 8, mind_share: float = 0.3, weights: dict[str, float] | None = None) -> int:
+        """One generation. `weights` (clip id -> weight) biases parent choice; the show
+        passes a listener's approval here so breeding follows the ear in the room."""
         kept = 0
         for _ in range(batch):
-            parent = self.archive.pick_parent(self.rng, self.recent)
+            parent = self.archive.pick_parent(self.rng, self.recent, weights)
             if parent is None:
                 self.say("archive is empty; run init first")
                 return 0

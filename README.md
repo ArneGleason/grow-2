@@ -29,13 +29,24 @@ macOS, `apt install csound` on Debian or Ubuntu). macOS ships only
     python -m grow run -g 20 -b 8   # grow for 20 generations, 8 children each
     python -m grow sheet            # the show, at http://127.0.0.1:8765
 
-Then watch the show. A set of pieces plays in a row; each instrument in a
-piece is a performer on the stage, playing its part. Turn the dial on the
-right while you listen, up when you like it and down when you do not, and
-the performers react. The dial's position through each piece, every skip,
-and every replay are recorded; that is the vote. The grid of niches is
-still there at `/map` for when you want to look rather than watch. When a
-dozen pieces have been heard with the dial moving:
+Then watch the show. The players are families: each founder's lineage is
+a character with a name, a color, and a repertoire of pieces. A set is a
+few songs; a song is a few scenes (an intro with one or two players, the
+full band, a shift where someone tries a relative of their piece, an
+outro) in which the players play together, mixed live in your browser.
+
+You conduct. Drag a player forward to hear more of them, back to hear
+less, sideways to place them. Click to silence, double-click to encourage.
+The dial on the right is your mood. The band listens: under sustained
+disapproval the least-approved player tries another piece from their
+family and says so; under sustained approval the scene is kept as a moment
+and runs longer. Between songs, if "grow between songs" is on, a
+generation is bred from what you approved and the newborns are announced
+with their parents. Pause, next scene, next song, stop, and the keyboard
+all work. Everything you do is recorded; that is the vote. The grid of
+niches is still at `/map`.
+
+When a dozen pieces have been heard with the dial moving:
 
     python -m grow taste            # train the taste probe, rescore the map
     python -m grow run -g 20        # the map now grows toward what you kept

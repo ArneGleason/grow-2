@@ -87,3 +87,41 @@ first value in 0..1, the first in 20..8000), which is only a picture.
 Performers are per piece; they do not yet persist as characters across a
 family. That is the obvious next step once the show is fun to sit through:
 the performers become the players, and each player gets an ear.
+
+## 2026-10-17 — the band
+
+Arne on the show: better, more interactive, but it felt like auditioning
+sounds with no sense of progress; no way to stop; approval did not visibly
+register; he wants players he can see and move front and back, silence or
+encourage, who also move themselves; he wants to hear them play off each
+other; and he wants the whole thing to be able to run on its own as a set
+of small arranged pieces rather than one run-on mode.
+
+Built: the unit of the show is now a scene with several players at once,
+mixed live in the browser with Web Audio. Players are families (a
+founder's whole lineage is one character with a repertoire). A song is
+intro, full band, shift (one player tries a relative of their piece), and
+outro; a set is a few songs with breaks. Drag changes gain, a distance
+lowpass, and pan immediately; click silences; double-click encourages;
+the dial is the mood. Players drift and wander on their own and step back
+when they leave a scene. The band reacts within seconds: six seconds of
+disapproval and the least-approved audible player swaps to a relative,
+with a speech bubble and a line in the "they heard you" log; eight seconds
+of approval keeps the moment (archive/moments.jsonl) and extends the
+scene. Between songs the server breeds a generation in a background
+thread with parents weighted by approval, and the newborns join the
+repertoires live, announced by name and parent. Pause, next scene, next
+song, stop, keyboard.
+
+Honest limits: the pieces were never written to play together, so the
+full-band scenes are collages, and the looping of unequal lengths phases
+them against each other. Sometimes that is the point; often it will be
+mush, and the conductor's job (silence, pull back) is what makes it music.
+Nothing aligns to a shared pulse yet. The performer's pulses are read from
+the score, not the audio. Approval feeds breeding immediately but the
+taste probe still needs a dozen heard pieces before it steers the map.
+
+Next, if this is fun: pieces that know about each other. A scene is
+itself a genome (who, which piece, where), and kept moments are the first
+population of arrangements. Then a shared pulse so players can lock, and
+players whose ears differ.

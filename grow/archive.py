@@ -77,8 +77,11 @@ class Archive:
             for d in sorted(clips_dir.iterdir()):
                 if not (d / "meta.json").exists():
                     continue
-                genome, meta = load_genome(d)
-                desc = Descriptors(**meta["descriptors"])
+                try:
+                    genome, meta = load_genome(d)
+                    desc = Descriptors(**meta["descriptors"])
+                except (OSError, ValueError, KeyError, TypeError):
+                    continue  # a clip being written by a live grow; it will be there next time
                 emb = None
                 if (d / "embedding.npy").exists():
                     emb = np.load(d / "embedding.npy")
@@ -126,6 +129,21 @@ class Archive:
     def empty_cells(self) -> list[tuple[int, int]]:
         g = self.grid()
         return [(x, y) for x in range(GRID) for y in range(GRID) if (x, y) not in g]
+
+    def family_of(self, clip_id: str) -> str:
+        """The founder at the root of this clip's lineage; players are families."""
+        lin = self.lineage(clip_id)
+        return lin[-1].id if lin else clip_id
+
+    def relatives(self, clip_id: str) -> list[Clip]:
+        """Alive clips in the same family, nearest first, excluding the clip itself."""
+        fam = self.family_of(clip_id)
+        me = self.clips.get(clip_id)
+        out = [c for c in self.alive() if c.id != clip_id and self.family_of(c.id) == fam]
+        if me is not None:
+            mine = set(a.id for a in self.lineage(clip_id))
+            out.sort(key=lambda c: (0 if c.genome.parent == clip_id or c.id == me.genome.parent or c.genome.parent == me.genome.parent else 1 if c.id in mine else 2, c.genome.created), reverse=False)
+        return out
 
     def lineage(self, clip_id: str) -> list[Clip]:
         out: list[Clip] = []
@@ -213,10 +231,14 @@ class Archive:
             self._write_meta(c)
 
     # -------------------------------------------------------------- selection
-    def pick_parent(self, rng: random.Random, recent: list[str] | None = None) -> Clip | None:
+    def pick_parent(self, rng: random.Random, recent: list[str] | None = None,
+                    weights: dict[str, float] | None = None) -> Clip | None:
         pool = self.alive()
         if not pool:
             return None
+        if weights:
+            # weights come from a listener's approval, never from a rule here
+            return rng.choices(pool, weights=[max(1e-3, weights.get(c.id, 1.0)) for c in pool])[0]
         if recent and rng.random() < 0.25:
             fresh = [self.clips[i] for i in recent if i in self.clips and self.clips[i].status == "alive"]
             if fresh:
