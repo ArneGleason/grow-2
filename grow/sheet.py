@@ -133,7 +133,7 @@ def _songs(archive: Archive, songs: SongArchive, players: list[dict], n_songs: i
         if not fams:
             continue
         order = list(fams); rng.shuffle(order)
-        slots = sorted(rng.sample(range(10), len(order)))
+        slots = sorted(rng.sample(range(0, 10, 2), len(order))) if len(order) <= 5 else sorted(rng.sample(range(10), len(order)))  # keep players apart on stage
         xs = {f: 0.12 + 0.76 * (slots[i] + 0.5) / 10 for i, f in enumerate(order)}
         depths = {f: rng.uniform(0.15, 0.7) for f in order}
 
