@@ -105,12 +105,18 @@ class Band:
         child = song.child("swap", f"{stage_name(self.archive, family)} brings in {base.genome.name}", parts={**song.parts, family: clip.id})
         return child, "swapped"
 
-    def add_player(self, song: Song) -> tuple[Song | None, str]:
+    def add_player(self, song: Song, family: str | None = None) -> tuple[Song | None, str]:
         fams = self.families()
         free = [f for f in fams if f not in song.parts]
-        if not free:
-            return None, "everyone is already playing"
-        family = self.rng.choice(free)
+        if family is None:
+            if not free:
+                return None, "everyone is already playing"
+            family = self.rng.choice(free)
+        elif family not in fams:
+            return None, "no such player"
+        elif family in song.parts:
+            return None, "already playing"
+
         founders = [c for c in fams[family] if c.genome.author == "seed"] or fams[family]
         base = self.rng.choice(founders)
         text = fit_to_grid(base.genome.text, song.seconds, song.beat, quantize=True, rng=self.rng)

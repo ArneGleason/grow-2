@@ -163,43 +163,89 @@ def _songs(archive: Archive, songs: SongArchive, players: list[dict], n_songs: i
 
 
 class LiveRespond:
-    """A player answers on stage: one job at a time, in a background thread."""
+    """A player answers, or joins, on stage: one job at a time, in a background thread."""
 
     def __init__(self, root: Path):
         self.root = root
         self.lock = threading.Lock()
         self.jobs: dict[str, dict] = {}
 
-    def start(self, song_id: str, family: str, mind: bool, nudge: str | None) -> dict:
-        job_id = f"{song_id}:{family}:{int(time.time())}"
+    def start(self, kind: str, song_id: str, family: str, mind: bool, nudge: str | None) -> dict:
+        job_id = f"{kind}:{song_id}:{family}:{int(time.time())}"
         with self.lock:
             if any(not j.get("done") for j in self.jobs.values()):
                 return {"started": False, "reason": "someone is already answering"}
-            self.jobs[job_id] = {"done": False, "song": song_id, "family": family, "started": time.time()}
-        threading.Thread(target=self._run, args=(job_id, song_id, family, mind, nudge), daemon=True).start()
+            self.jobs[job_id] = {"done": False, "kind": kind, "song": song_id, "family": family, "started": time.time()}
+        threading.Thread(target=self._run, args=(job_id, kind, song_id, family, mind, nudge), daemon=True).start()
         return {"started": True, "job": job_id}
 
-    def _run(self, job_id: str, song_id: str, family: str, mind: bool, nudge: str | None) -> None:
+    def _run(self, job_id: str, kind: str, song_id: str, family: str, mind: bool, nudge: str | None) -> None:
         from .band import Band
         from .respond import respond
         job = self.jobs[job_id]
         try:
             b = Band(self.root, use_mind=mind, verbose=False)
             song = b.songs.songs.get(song_id)
-            if song is None or family not in song.parts:
-                job.update(done=True, error="no such song or player"); return
-            child, why = respond(b.archive, b.songs, song, family, b.rng, b.use_mind, k=3, nudge=nudge)
+            if song is None:
+                job.update(done=True, error="no such song"); return
+            if kind == "join":
+                if family in song.parts:
+                    # already in this song, only sitting out the scene: bring the part back in
+                    job.update(done=True, child=song.id, clip=song.parts[family], note=f"{stage_name(b.archive, family)} comes back in",
+                               kept=None, how="", seconds=round(time.time() - job["started"], 1))
+                    return
+                child, why = b.add_player(song, family)
+            else:
+                if family not in song.parts:
+                    job.update(done=True, error="that player is not in this song"); return
+                child, why = respond(b.archive, b.songs, song, family, b.rng, b.use_mind, k=3, nudge=nudge)
             if child is None:
                 job.update(done=True, error=why); return
             child.name = song.name
+            if child.descriptors is None:
+                from .song import render_mix
+                render_mix(b.archive, b.songs, child)
             kept, how = b.songs.offer(child, b.ear)
-            job.update(done=True, child=child.id, clip=child.parts[family], note=child.note, kept=kept, how=how,
+            job.update(done=True, child=child.id, clip=child.parts.get(family), note=child.note, kept=kept, how=how,
                        seconds=round(time.time() - job["started"], 1))
         except Exception as exc:  # noqa: BLE001
             job.update(done=True, error=str(exc)[:200])
 
     def status(self, job_id: str) -> dict:
         return self.jobs.get(job_id, {"done": True, "error": "unknown job"})
+
+
+class LiveJam:
+    """Bands write songs on demand, in a background thread."""
+
+    def __init__(self, root: Path):
+        self.root = root
+        self.running = False
+        self.last: dict | None = None
+        self.lock = threading.Lock()
+
+    def status(self) -> dict:
+        return {"running": self.running, "last": self.last}
+
+    def start(self, n: int, mind: bool) -> bool:
+        with self.lock:
+            if self.running:
+                return False
+            self.running = True
+        threading.Thread(target=self._run, args=(n, mind), daemon=True).start()
+        return True
+
+    def _run(self, n: int, mind: bool) -> None:
+        from .band import Band
+        t0 = time.time()
+        try:
+            b = Band(self.root, use_mind=mind, verbose=False)
+            songs = b.init_songs(n)
+            self.last = {"songs": [s.name for s in songs], "seconds": round(time.time() - t0), "when": time.time()}
+        except Exception as exc:  # noqa: BLE001
+            self.last = {"error": str(exc)[:200], "when": time.time()}
+        finally:
+            self.running = False
 
 
 class LiveGrow:
@@ -246,6 +292,7 @@ def serve(root: Path | str = ARCHIVE_DIR, port: int = 8765) -> None:
     rng = random.Random()
     live = LiveGrow(root, events)
     answering = LiveRespond(root)
+    jamming = LiveJam(root)
 
     class Handler(SimpleHTTPRequestHandler):
         def __init__(self, *a, **k):
@@ -289,8 +336,10 @@ def serve(root: Path | str = ARCHIVE_DIR, port: int = 8765) -> None:
                             "status": arc.status_lines()[0] + " · " + sa.status_line()})
             elif url.path == "/grow":
                 self._json(live.status())
-            elif url.path == "/respond":
+            elif url.path in ("/respond", "/join"):
                 self._json(answering.status(q.get("job", [""])[0]))
+            elif url.path == "/jam":
+                self._json(jamming.status())
             else:
                 super().do_GET()
 
@@ -305,10 +354,15 @@ def serve(root: Path | str = ARCHIVE_DIR, port: int = 8765) -> None:
                 started = live.start(batch, mind)
                 self._json({"started": started, **live.status()})
                 return
-            if url.path == "/respond":
+            if url.path in ("/respond", "/join"):
                 mind = q.get("mind", ["0"])[0] in ("1", "true", "yes")
                 nudge = q.get("nudge", [None])[0]
-                self._json(answering.start(q.get("song", [""])[0], q.get("player", [""])[0], mind, nudge))
+                self._json(answering.start(url.path.strip("/"), q.get("song", [""])[0], q.get("player", [""])[0], mind, nudge))
+                return
+            if url.path == "/jam":
+                n = max(1, min(8, int(q.get("n", ["3"])[0])))
+                mind = q.get("mind", ["0"])[0] in ("1", "true", "yes")
+                self._json({"started": jamming.start(n, mind), **jamming.status()})
                 return
             if url.path == "/moment":
                 try:

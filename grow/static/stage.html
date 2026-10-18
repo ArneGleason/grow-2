@@ -48,6 +48,7 @@
   <button onclick="nextSong()" title="shift+n">song &#9654;&#9654;</button>
   <button onclick="stop()" title="esc">&#9632; stop</button>
   <button onclick="newShow()">new set</button>
+  <button onclick="jamNow()" id="jambtn" title="the bands write new songs together">&#9835; jam</button>
   <button onclick="growNow()" id="growbtn" title="breed a generation from what you approved">&#10010; grow</button>
   <label class="chk"><input type="checkbox" id="autogrow" checked> grow between songs</label>
   <label class="chk"><input type="checkbox" id="usemind"> with the mind</label>
@@ -55,7 +56,7 @@
  </div>
  <div id="set"><h3>tonight</h3><div id="songs"></div></div>
  <div id="stagewrap"><canvas id="stage"></canvas>
-  <div id="overlay"><div><h2>Grow 2</h2>A band plays songs it wrote together: each part was made in answer to the others. Drag a player forward to hear more of them, back to hear less, sideways to place them. Click to silence, double-click to encourage. The dial on the right is your mood; hold it low and the player you like least answers the others again, live. Between songs they write more from what you approved.<br><br><button class="big" onclick="start()">start the show</button></div></div>
+  <div id="overlay"><div><h2>Grow 2</h2>A band plays songs it wrote together: each part was made in answer to the others. Drag a player forward to hear more of them, back to hear less, sideways to place them; drag a resting player onto the stage and they join the song and answer the others. Double-click to encourage, shift and double-click to discourage. The dial on the right is your mood; hold it low and the player you like least answers the others again, live. Between songs they write more from what you approved.<br><br><button class="big" onclick="start()">start the show</button></div></div>
   <div id="toast"></div>
  </div>
  <div id="side">
@@ -64,7 +65,7 @@
   <div id="heard"><div style="color:#6a665c">they heard you:</div></div>
   <div id="growbox"><div>breeding</div><div class="st" id="growst">idle</div></div>
  </div>
- <div id="bottom"><canvas id="roll"></canvas><div id="hint"><span><b>drag</b> move</span><span><b>click</b> silence</span><span><b>dbl-click</b> encourage</span><span><b>&uarr;&darr;</b> dial</span><span><b>space</b> pause</span><span><b>n</b> next scene</span><span><b>esc</b> stop</span><span id="facts" style="margin-left:auto"></span></div></div>
+ <div id="bottom"><canvas id="roll"></canvas><div id="hint"><span><b>drag</b> move · drag a resting player onto the stage and they join</span><span><b>dbl-click</b> encourage</span><span><b>shift+dbl-click</b> discourage (silence; again to unmute)</span><span><b>&uarr;&darr;</b> dial</span><span><b>space</b> pause</span><span><b>n</b> next scene</span><span><b>esc</b> stop</span><span id="facts" style="margin-left:auto"></span></div></div>
 </div>
 <script>
 // ------------------------------------------------------------------ state
@@ -172,7 +173,7 @@ async function playScene(i, j){
   sceneSeconds = scene.seconds; sceneExtended = false; sceneStart = actx.currentTime; lowSince = highSince = 0; answering = null;
   renderSet();
   document.getElementById('title').textContent = song.title;
-  const who = scene.members.map(m=>players[m.player].name+' plays '+(clipsById[m.clip]?clipsById[m.clip].name:'?')).join(' · ');
+  const who = scene.members.map(m=>players[m.player].name+': '+(clipsById[m.clip]?clipsById[m.clip].name:'?')).join('  ·  ');
   document.getElementById('subtitle').textContent = scene.kind + (scene.note ? ' · ' + scene.note : '') + ' · ' + who;
   if (scene.live && players[scene.live]) setTimeout(()=>answerLive(scene.live, null), 1500);
   // who leaves, who stays, who joins
@@ -222,7 +223,7 @@ function progress(){ return scene ? Math.min(1, (actx.currentTime - sceneStart)/
 async function start(){
   ensureAudio(); if (actx.state==='suspended') await actx.resume();
   document.getElementById('overlay').style.display='none';
-  if (!started){ started = true; paused = false; if (!songs.length) await loadShow(); playScene(0,0); }
+  if (!started){ started = true; paused = false; if (!songs.length) await loadShow(); if (!songs.length){ await jamNow(true); } playScene(0,0); }
   else if (paused) togglePause();
   document.getElementById('startbtn').textContent = 'playing';
 }
@@ -296,6 +297,45 @@ async function answerLive(pid, nudge){
     document.getElementById('subtitle').textContent = scene.kind + ' · ' + esc(st.note);
   }, 1500);
 }
+async function joinLive(p){
+  if (!scene || !scene.song || answering) { p.bubble={text:'in a moment', until:performance.now()+2000}; return; }
+  if (scene.members.find(m=>m.player===p.id)) return;
+  const mind = document.getElementById('usemind').checked;
+  const r = await (await fetch('/join?song='+scene.song+'&player='+p.id+'&mind='+(mind?1:0), {method:'POST'})).json();
+  if (!r.started){ p.bubble={text:'in a moment', until:performance.now()+2000}; return; }
+  answering = r.job; p.bubble = {text:'listening…', until:performance.now()+60000}; p.resting = false;
+  const songAtStart = scene.song, x = p.x, depth = p.depth;
+  const poll = setInterval(async ()=>{
+    const st = await (await fetch('/join?job='+answering)).json();
+    if (!st.done) return;
+    clearInterval(poll); answering = null;
+    if (st.error || !st.clip){ p.resting = true; p.td = 0.93; p.bubble = {text:'…', until:performance.now()+2000}; heard('<b>'+esc(p.name)+'</b> could not join: '+esc(st.error||'no part')); return; }
+    if (!scene || scene.song !== songAtStart){ p.resting = true; p.td = 0.93; heard('<b>'+esc(p.name)+'</b> joined too late'); return; }
+    const m = {player:p.id, clip:st.clip, x:x, depth:depth, muted:false}; scene.members.push(m); scene.song = st.child;
+    await refreshClip(st.clip); startMember(m, 0.8);
+    p.bubble = {text:'!', until:performance.now()+3000};
+    heard('<b>'+esc(st.note)+'</b>'+(st.seconds >= 1 ? ' in '+st.seconds+'s' : '')+(st.kept?' · kept on the map':''));
+    send({kind:'encourage', clip:st.clip, value:1, pos:progress()});
+    renderSet();
+  }, 1500);
+}
+let jamPoll = null;
+async function jamNow(wait=false){
+  const mind = document.getElementById('usemind').checked;
+  const r = await (await fetch('/jam?n=3&mind='+(mind?1:0), {method:'POST'})).json();
+  document.getElementById('subtitle').textContent = 'the bands are writing songs together…';
+  document.getElementById('jambtn').textContent = '♫ writing…';
+  for (const p of Object.values(players)) p.bubble = {text:'writing…', until:performance.now()+90000};
+  await new Promise(res=>{ clearInterval(jamPoll); jamPoll = setInterval(async ()=>{ const st = await (await fetch('/jam')).json(); if (st.running) return; clearInterval(jamPoll); res(st); }, 2000); });
+  for (const p of Object.values(players)) p.bubble = null;
+  document.getElementById('jambtn').innerHTML = '&#9835; jam';
+  const st = await (await fetch('/jam')).json();
+  if (st.last && st.last.error){ toast('writing failed: '+st.last.error, 6000); return; }
+  const names = (st.last && st.last.songs) || [];
+  toast('new songs: '+names.join(' · '), 5000); heard('wrote: '+esc(names.join(' · ')));
+  if (!wait){ if (!started || !scene) { await loadShow(); if (started) playScene(0,0); } }
+  else await loadShow();
+}
 async function refreshClip(id){ if (clipsById[id]) return; try { const d = await (await fetch('/players')).json(); for (const pl of d.players) for (const c of pl.repertoire) clipsById[c.id] = c; } catch(e){} }
 function keepMoment(){
   if (!scene) return;
@@ -346,10 +386,11 @@ window.addEventListener('mousemove', e=>{ const {mx,my}=canvasXY(e); hover = pla
   if (Math.abs(grabbed.x - x) > 0.004 || Math.abs(grabbed.depth-depth) > 0.004) grabMoved = true;
   grabbed.x = Math.max(0.03, Math.min(0.97, x)); grabbed.depth = depth; grabbed.tx = grabbed.x; grabbed.td = depth; applyMix(grabbed, active[grabbed.id]); });
 window.addEventListener('mouseup', e=>{ if (!grabbed) return; const p=grabbed; grabbed=null; stage.style.cursor='grab';
-  if (grabMoved){ if (active[p.id]) send({kind:'move', clip:active[p.id].clip, value:(0.5-p.depth)*2, pos:progress()}); heard('<b>'+esc(p.name)+'</b> moved '+(p.depth<0.35?'up front':p.depth>0.7?'to the back':'to the middle')); }
-  else if (performance.now()-downAt < 400){ clearTimeout(clickTimer); clickTimer = setTimeout(()=>toggleMute(p), 260); } });
-let clickTimer = null;  // a single click waits briefly so a double-click can cancel it
-stage.addEventListener('dblclick', e=>{ clearTimeout(clickTimer); const {mx,my}=canvasXY(e); const p=playerAt(mx,my); if (p) encourage(p); });
+  if (grabMoved){
+    if (p.resting && p.depth < 0.85 && scene && started){ joinLive(p); }
+    else if (active[p.id]){ send({kind:'move', clip:active[p.id].clip, value:(0.5-p.depth)*2, pos:progress()}); heard('<b>'+esc(p.name)+'</b> moved '+(p.depth<0.35?'up front':p.depth>0.7?'to the back':'to the middle')); }
+  } });
+stage.addEventListener('dblclick', e=>{ const {mx,my}=canvasXY(e); const p=playerAt(mx,my); if (!p) return; if (e.shiftKey) toggleMute(p); else encourage(p); });
 function toggleMute(p){ p.muted = !p.muted; applyMix(p, active[p.id]);
   if (p.muted){ p.bubble={text:'…', until:performance.now()+2500}; p.td = Math.min(0.9, p.depth+0.25); if (active[p.id]) send({kind:'silence', clip:active[p.id].clip, value:-1, pos:progress()}); heard('<b>'+esc(p.name)+'</b> silenced'); }
   else { p.bubble={text:'back', until:performance.now()+2000}; heard('<b>'+esc(p.name)+'</b> unmuted'); } }

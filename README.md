@@ -26,8 +26,11 @@ macOS, `apt install csound` on Debian or Ubuntu). macOS ships only
     source .venv/bin/activate       # again in every new terminal
     pip install -e .                # numpy, scipy, soundfile
     python -m grow init             # render the six founders in seeds/ into archive/
-    python -m grow band init -n 4   # bands jam: four songs written together
     python -m grow sheet            # the show, at http://127.0.0.1:8765
+
+If there are no songs yet, pressing start makes the bands write their
+first ones (about a minute), and the "jam" button writes more at any time.
+`python -m grow band init -n 4` does the same from the terminal.
 
 Then watch the show. The players are families: each founder's lineage is a
 character with a name and a color. A song is written together: a tempo, a
@@ -38,7 +41,9 @@ two alone), the full band, a shift (a version where someone answered
 differently, or a player answering live on stage), and an outro.
 
 You conduct. Drag a player forward to hear more of them, back to hear
-less, sideways to place them. Click to silence, double-click to encourage.
+less, sideways to place them. Drag a resting player onto the stage and they
+join the song and answer the others. Double-click to encourage; shift and
+double-click to discourage (it silences them; again to let them back in).
 The dial on the right is your mood. Hold it low for a few seconds and the
 player you like least answers the others again, live, in a few seconds, and
 says what they did ("echoes 1.5 beats late", "sits out bars 3 and 5",

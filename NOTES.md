@@ -172,3 +172,22 @@ Next: listen. If songs written together sound like a band more than the
 collages did, the next moves are a shared pulse the mind is told about
 (it is: the grid is in the prompt) and letting the players' ears disagree,
 which they will as soon as each has its own probe.
+
+## 2026-10-18 — "they just sit there"
+
+Arne put players on the stage and nothing happened. Two causes: the sheet
+had no songs yet (the jam step is easy to skip, and the page said nothing),
+and dragging a resting player only moved them. Also: a single click to
+silence was too easy to confuse with a double-click.
+
+Changed: pressing start with no songs makes the bands write their first
+three on the spot and says so; a "jam" button writes more at any time.
+Dragging a resting player onto the stage makes them join the current song:
+if they already have a part in it they come back in on the beat, otherwise
+they get a fitted piece, answer the others, and the song becomes a child.
+Single click now does nothing. Double-click encourages; shift plus
+double-click discourages (silences; again to unmute).
+
+Verified headless: an empty archive goes from zero songs to a playing intro
+by itself; Moss dragged onto the stage came back in with the band in step;
+click leaves mute alone, shift-double-click mutes, double-click encourages.
