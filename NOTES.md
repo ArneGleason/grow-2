@@ -227,3 +227,38 @@ Verified: a tranquil/lydian direction cast Dusk, Bowl, Pluck and Moss at
 in the browser, clicking the conductor opens the panel, choosing a mood
 updates the direction and rebuilds the space, directing records it.
 Nobody has listened.
+
+## 2026-10-18 — phrases and thoughts
+
+Arne: more fun to interact with, but the players' thinking is barely
+telegraphed, and the music is the same note sequence all along, no prosody,
+no going anywhere: quick and slow, long and short, loud and soft, spiral up
+then down then break off. Choreography.
+
+Built, for the music: `shape.py`, gestures a part can take over its own
+length as relations to time, not judgments: spiral up/down, stairs, swell,
+fade, arch, rush, drag, breath (a bar of silence, then back in a new
+register), fragment (a motif shedding a note each repeat), long-short,
+question-answer, break-off (halfway, thin / double the pace / jump an
+octave / hold). "shape" is now a responder (weighted double), founders get
+a gesture when they join a band, the mind is asked for a shape, and songs
+default to 8-16 bars so an arc has room. Every gesture renders on every
+founder. The full scene is now a chain: the song, then its descendants,
+each one loop, with only the changed parts swapping in exactly on the loop
+boundary (phase verified), so the band moves through its own family
+instead of repeating. Echo and double now answer one named player.
+
+For the thinking: `respond()` reports progress (listening to whom, trying
+what, hearing each candidate, what it chose and by which ear); the stage
+shows the latest thought in the player's bubble and logs the sequence;
+songs remember what the player considered and the set list shows it; a
+dotted attention line runs from a player to the player it is answering.
+
+Verified headless: a chained full scene stepped from the song to its child
+on the loop boundary with all stems still in phase; Moss drew a line to
+Chime; a live answer streamed "hearing it: moves up an octave", "hearing
+it: takes a breath", "chose: takes a breath at bar 2 and comes back lower".
+
+Honest limit: gestures are blind transformations and the ear is still
+novelty until Arne's dial trains the per-family probes; so for now they
+make parts move, not make them good. That is the right order.

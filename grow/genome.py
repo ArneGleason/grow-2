@@ -35,6 +35,7 @@ class Genome:
     author: str = "seed"  # seed | jitter | score | cross | mind | human
     note: str = ""        # a one-line reason or nudge, for the lineage view
     created: float = field(default_factory=time.time)
+    about: str = ""       # for a song part: the player it answers
 
     def instruments(self) -> str:
         m = INSTR_RE.search(self.text)
@@ -66,6 +67,7 @@ class Genome:
     def meta(self) -> dict:
         d = asdict(self)
         d.pop("text")
+        d.pop("about", None)
         return d
 
 

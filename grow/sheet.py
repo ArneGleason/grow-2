@@ -60,6 +60,7 @@ def _clip_payload(archive: Archive, c: Clip, with_score: bool = False) -> dict:
         used = sorted(set(e["instr"] for e in events)) or sorted(labels)
         d["performers"] = [{"instr": n, "label": labels.get(n, f"voice {n}")} for n in used]
         d["events"] = events
+        d["about"] = getattr(c, "about", "") or ""
     else:
         d["csd"] = c.genome.text
     return d
@@ -108,7 +109,7 @@ def _pick_clip(player: dict, rng: random.Random, exclude: str | None = None) -> 
 def _song_payload(archive: Archive, songs: SongArchive, song: Song, prefs: dict[str, float]) -> dict:
     return {"id": song.id, "name": song.name, "note": song.note, "author": song.author, "generation": song.generation,
             "seconds": song.seconds, "tempo": song.tempo, "bars": song.bars, "status": song.status,
-            "scale": song.scale, "groove": song.groove,
+            "scale": song.scale, "groove": song.groove, "tried": song.tried, "chose": song.chose,
             "parts": {fam: cid for fam, cid in song.parts.items() if cid in archive.clips},
             "pref": prefs.get(song.id, 0.0), "heard": song.id in prefs,
             "lineage": [{"id": a.id, "note": a.note, "author": a.author, "generation": a.generation} for a in songs.lineage(song.id)]}
@@ -147,21 +148,41 @@ def _songs(archive: Archive, songs: SongArchive, players: list[dict], n_songs: i
                     for f in ids if f in sg.parts and sg.parts[f] in archive.clips]
 
         half = max(1, len(order) // 2)
-        kids = [k for k in songs.children(song.id) if k.descriptors and k.status in ("alive", "declined", "evicted")]
-        shift = rng.choice(kids) if kids else None
-        loops = 1 if song.seconds > 24 else 2
+
+        def ok_kid(k: Song) -> bool:
+            return bool(k.descriptors) and k.status in ("alive", "declined", "evicted") and abs(k.seconds - song.seconds) < 0.01
+
+        # a chain: the song, then versions of it where someone answered differently,
+        # played back to back in lockstep so the band moves through its own family
+        chain, cur = [song], song
+        for _ in range(3):
+            kids = [k for k in songs.children(cur.id) if ok_kid(k)]
+            if not kids:
+                break
+            cur = rng.choice(kids); chain.append(cur)
+        shift = chain[-1] if len(chain) > 1 else None
         loop = round(song.seconds, 3)
+        links = [{"song": sg.id, "members": members(sg, [f for f in order if f in sg.parts] + [f for f in sg.parts if f not in order]),
+                  "note": sg.note if sg is not song else "", "tried": sg.tried, "chose": sg.chose} for sg in chain]
         scenes = [
-            {"kind": "intro", "song": song.id, "members": members(song, order[:half]), "seconds": round(song.seconds * 1, 1), "loop": loop},
-            {"kind": "full", "song": song.id, "members": members(song, order), "seconds": round(song.seconds * loops, 1), "loop": loop},
+            {"kind": "intro", "song": song.id, "members": members(song, order[:half]), "seconds": round(song.seconds, 1), "loop": loop},
+            {"kind": "full", "song": song.id, "members": members(song, order), "seconds": round(song.seconds * len(links), 1), "loop": loop,
+             "chain": links, "note": (f"then {len(links) - 1} answer{'s' if len(links) > 2 else ''}" if len(links) > 1 else "")},
         ]
         if shift is not None:
-            scenes.append({"kind": "shift", "song": shift.id, "members": members(shift, [f for f in order if f in shift.parts] + [f for f in shift.parts if f not in order]),
-                           "seconds": round(shift.seconds * loops, 1), "loop": round(shift.seconds, 3), "note": shift.note})
+            kids2 = [k for k in songs.children(shift.id) if ok_kid(k)]
+            nxt = rng.choice(kids2) if kids2 else None
+            if nxt is not None:
+                scenes.append({"kind": "shift", "song": nxt.id, "members": members(nxt, [f for f in order if f in nxt.parts] + [f for f in nxt.parts if f not in order]),
+                               "seconds": round(nxt.seconds, 1), "loop": loop, "note": nxt.note, "tried": nxt.tried, "chose": nxt.chose})
+            else:
+                scenes.append({"kind": "shift", "song": shift.id, "members": members(shift, [f for f in order if f in shift.parts] + [f for f in shift.parts if f not in order]),
+                               "seconds": round(shift.seconds, 1), "loop": loop, "live": rng.choice([f for f in order if f in shift.parts] or order), "note": "someone answers live"})
         else:
-            scenes.append({"kind": "shift", "song": song.id, "members": members(song, order), "seconds": round(song.seconds * loops, 1), "loop": loop,
+            scenes.append({"kind": "shift", "song": song.id, "members": members(song, order), "seconds": round(song.seconds, 1), "loop": loop,
                            "live": rng.choice(order), "note": "someone answers live"})
-        scenes.append({"kind": "outro", "song": song.id, "members": members(song, order[-half:]), "seconds": round(song.seconds * 1, 1), "loop": loop})
+        last = chain[-1]
+        scenes.append({"kind": "outro", "song": last.id, "members": members(last, [f for f in order[-half:] if f in last.parts] or list(last.parts)[:half]), "seconds": round(song.seconds, 1), "loop": loop})
         title = song.name + " · " + " & ".join(by_id[f]["name"] for f in order)
         out.append({"id": song.id, "title": title, "cast": order, "scenes": scenes, "song": _song_payload(archive, songs, song, prefs)})
     return out
@@ -180,7 +201,7 @@ class LiveRespond:
         with self.lock:
             if any(not j.get("done") for j in self.jobs.values()):
                 return {"started": False, "reason": "someone is already answering"}
-            self.jobs[job_id] = {"done": False, "kind": kind, "song": song_id, "family": family, "started": time.time()}
+            self.jobs[job_id] = {"done": False, "kind": kind, "song": song_id, "family": family, "started": time.time(), "thoughts": []}
         threading.Thread(target=self._run, args=(job_id, kind, song_id, family, mind, nudge), daemon=True).start()
         return {"started": True, "job": job_id}
 
@@ -193,6 +214,8 @@ class LiveRespond:
             song = b.songs.songs.get(song_id)
             if song is None:
                 job.update(done=True, error="no such song"); return
+            def progress(text: str) -> None:
+                job["thoughts"].append(text)
             if kind == "regrid":
                 child, why = b.regrid(song)
             elif kind == "join":
@@ -205,7 +228,7 @@ class LiveRespond:
             else:
                 if family not in song.parts:
                     job.update(done=True, error="that player is not in this song"); return
-                child, why = respond(b.archive, b.songs, song, family, b.rng, b.use_mind, k=3, nudge=nudge, direction=b.direction)
+                child, why = respond(b.archive, b.songs, song, family, b.rng, b.use_mind, k=3, nudge=nudge, direction=b.direction, progress=progress)
             if child is None:
                 job.update(done=True, error=why); return
             child.name = song.name
@@ -213,8 +236,12 @@ class LiveRespond:
                 from .song import render_mix
                 render_mix(b.archive, b.songs, child)
             kept, how = b.songs.offer(child, b.ear)
+            about = ""
+            cl = b.archive.clips.get(child.parts.get(family, ""))
+            if cl is not None:
+                about = getattr(cl, "about", "") or ""
             job.update(done=True, child=child.id, clip=child.parts.get(family), note=child.note, kept=kept, how=how,
-                       seconds=round(time.time() - job["started"], 1))
+                       tried=child.tried, chose=child.chose, about=about, seconds=round(time.time() - job["started"], 1))
         except Exception as exc:  # noqa: BLE001
             job.update(done=True, error=str(exc)[:200])
 

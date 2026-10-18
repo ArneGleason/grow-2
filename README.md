@@ -37,8 +37,12 @@ character with a name and a color. A song is written together: a tempo, a
 number of bars, and one part per player, each part made in answer to the
 parts already there, every part exactly the song's length so the band plays
 in lockstep. A set is a few songs; each song plays as an intro (a part or
-two alone), the full band, a shift (a version where someone answered
-differently, or a player answering live on stage), and an outro.
+two alone), the full band walking through its own family (the song, then
+the versions where someone answered differently, each part changing on the
+beat), a shift (a further version, or a player answering live on stage),
+and an outro. While a player answers, its bubble says what it is doing
+(listening to whom, trying what, hearing it, what it chose and why), and a
+dotted line runs from a player to the one it is answering.
 
 You conduct. Drag a player forward to hear more of them, back to hear
 less, sideways to place them. Drag a resting player onto the stage and they
@@ -83,12 +87,19 @@ the seeds and the loop.
 ## How a part answers
 
 A responder is a relation to what the others are playing, never an opinion
-about whether it is good: echo another part's rhythm late by some beats,
-double it in unison, play where the others are quiet, thin where they are
-busy and thicken where they are sparse, move register away from a
-neighbor, sit out a bar or two, or vary the part without looking. With the
-mind on, a language model writes the part with the other parts in front of
-it. A player drafts a few candidates, hears each in the mix, and puts
+about whether it is good: echo one named player's rhythm late by some
+beats, double them in unison, play where the others are quiet, thin where
+they are busy and thicken where they are sparse, move register away from a
+neighbor, sit out a bar or two, take the conductor's groove or scale, or
+vary the part without looking. A part can also take a shape over its own
+length, so a phrase goes somewhere instead of looping in place: spiral up
+or down, climb a step each bar, grow from a whisper, fade, rise and fall,
+hurry toward the end, slow as it goes, take a breath and come back in a new
+register, repeat a motif shedding a note each time, speak in long and
+short, ask and answer a step away, or break off halfway. Founders join a
+band with a gesture already applied. With the mind on, a language model
+writes the part with the other parts in front of it and is asked for a
+shape. A player drafts a few candidates, hears each in the mix, and puts
 forward the one its own ear prefers: before any approval exists that ear is
 geometry (did my part change the mix, is the mix new for this family);
 after, it is a probe trained on your reaction to songs this player was in.

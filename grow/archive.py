@@ -48,6 +48,7 @@ class Clip:
     embedding: np.ndarray | None = None
     quality: float = 0.0
     ear: str = "novelty"
+    about: str = ""          # for a song part: the player it answers, if any
 
     @property
     def id(self) -> str:
@@ -88,7 +89,7 @@ class Archive:
                 arc.clips[genome.id] = Clip(
                     genome=genome, descriptors=desc, cell=tuple(meta["cell"]), dir=d,
                     status=meta.get("status", "alive"), embedding=emb,
-                    quality=meta.get("quality", 0.0), ear=meta.get("ear", "novelty"),
+                    quality=meta.get("quality", 0.0), ear=meta.get("ear", "novelty"), about=meta.get("about", ""),
                 )
         return arc
 

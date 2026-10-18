@@ -73,7 +73,7 @@ class Band:
         return 0.7 * self.probe.score_feats(f) + 0.3 * nov, f"taste{self.probe.n_votes}"
 
     # ----------------------------------------------------------------- init
-    def init_songs(self, n: int = 3, bars_choices=(4, 8, 8)) -> list[Song]:
+    def init_songs(self, n: int = 3, bars_choices=(8, 8, 12, 16)) -> list[Song]:
         fams = self.families()
         founders = {fam: next((c for c in clips if c.genome.author == "seed"), clips[0]) for fam, clips in fams.items()}
         if not founders:

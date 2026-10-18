@@ -102,6 +102,7 @@ const roll = document.getElementById('roll'), rctx = roll.getContext('2d');
 const knob = document.getElementById('knob');
 let grabbed = null, grabMoved = false, downAt = 0, hover = null, lastLoop = null;
 let direction = null, dirOptions = null, space = null, lastSongForSpace = null;   // the conductor
+let chainIdx = 0, chainTimer = null;                                            // a scene that walks through versions
 const CHAIR = {x:0.075, depth:-0.02};                    // the conductor's podium: front, at the side
 let ripples = [];
 
@@ -129,7 +130,7 @@ function renderSet(){
     const t=document.createElement('div'); t.className='t'; t.textContent=(i+1)+'. '+s.title; t.onclick=()=>{ playScene(i,0); }; d.appendChild(t);
     s.scenes.forEach((sc,j)=>{ const e=document.createElement('div'); e.className='scene'+(i===songIdx&&j===sceneIdx?' now':'');
       const names = sc.members.map(m=>players[m.player]?players[m.player].name:'?').join(', ');
-      e.innerHTML='<span>'+sc.kind+' · '+esc(sc.note ? sc.note : names)+'</span><span>'+Math.round(sc.seconds)+'s</span>'; e.title = names; e.onclick=()=>playScene(i,j); d.appendChild(e); });
+      e.innerHTML='<span>'+sc.kind+' · '+esc(sc.note ? sc.note : names)+'</span><span>'+Math.round(sc.seconds)+'s</span>'; e.title = (sc.chain ? sc.chain.map(l=>l.note||'start').join(' → ') + ' · ' : '') + names; e.onclick=()=>playScene(i,j); d.appendChild(e); });
     el.appendChild(d); });
 }
 function esc(s){ return String(s).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
@@ -193,11 +194,14 @@ async function playScene(i, j){
   songIdx = (i + songs.length) % songs.length; song = songs[songIdx];
   sceneIdx = (j + song.scenes.length) % song.scenes.length; scene = song.scenes[sceneIdx];
   sceneSeconds = scene.seconds; sceneExtended = false; sceneStart = actx.currentTime; lowSince = highSince = 0; answering = null;
+  clearTimeout(chainTimer); chainIdx = 0;
+  if (scene.chain && scene.chain.length > 1) scheduleChain();
   if (space && (space.kind === 'echo' || space.kind === 'space echo') && scene.song !== lastSongForSpace){ lastSongForSpace = scene.song; buildSpace(); }
   renderSet();
   document.getElementById('title').textContent = song.title;
   const who = scene.members.map(m=>players[m.player].name+': '+(clipsById[m.clip]?clipsById[m.clip].name:'?')).join('  ·  ');
   document.getElementById('subtitle').textContent = scene.kind + (scene.note ? ' · ' + scene.note : '') + ' · ' + who;
+  if (scene.tried && scene.tried.length) heard('<b>'+esc(scene.note||'')+'</b> · considered '+esc(scene.tried.map(t=>t.split(':')[0]).join(', '))+(scene.chose?' · '+esc(scene.chose):''));
   if (scene.live && players[scene.live]) setTimeout(()=>answerLive(scene.live, null), 1500);
   // who leaves, who stays, who joins
   const keep = new Set(scene.members.map(m=>m.player));
@@ -220,6 +224,50 @@ async function playScene(i, j){
   resting.forEach((p,i)=>{ p.tx = resting.length===1 ? 0.5 : 0.08 + 0.84*i/(resting.length-1); p.td = (i%2 ? 0.84 : 0.97) + Math.random()*0.02; });
   scheduleSceneEnd();
 }
+function scheduleChain(){
+  // step to the next link exactly at the next loop boundary
+  const loop = scene.loop, link = chainIdx + 1;
+  if (!scene.chain || link >= scene.chain.length) return;
+  const boundary = sceneT0 + link * loop;
+  const wait = Math.max(0, (boundary - actx.currentTime) * 1000 - 350);
+  chainTimer = setTimeout(()=>{
+    if (!scene || !scene.chain) return;
+    const next = scene.chain[link]; chainIdx = link;
+    const was = new Set(scene.members.map(m=>m.player));
+    scene.song = next.song;
+    // which parts change
+    for (const m of next.members){
+      const cur = scene.members.find(x=>x.player===m.player);
+      if (!cur){ scene.members.push({...m}); const p=players[m.player]; p.tx=m.x; p.td=m.depth; startMemberAt(m, boundary); const q=players[m.player]; q.bubble={text:'joins', until:performance.now()+3000}; }
+      else if (cur.clip !== m.clip){ cur.clip = m.clip; startMemberAt(cur, boundary); players[m.player].bubble={text: shortNote(next.note), until:performance.now()+5000}; }
+    }
+    for (const m of [...scene.members]) if (!next.members.find(x=>x.player===m.player)){ stopMemberAt(m.player, boundary); scene.members = scene.members.filter(x=>x!==m); players[m.player].resting = true; players[m.player].td = 0.93; players[m.player].bubble={text:'sits out', until:performance.now()+3000}; }
+    document.getElementById('subtitle').textContent = scene.kind + ' · ' + (next.note || '') + ' · ' + scene.members.map(m=>players[m.player].name+': '+(clipsById[m.clip]?clipsById[m.clip].name:'?')).join('  ·  ');
+    if (next.tried && next.tried.length) heard('<b>'+esc(next.note||'')+'</b> · considered '+esc(next.tried.map(t=>t.split(':')[0]).join(', '))+(next.chose?' · '+esc(next.chose):''));
+    renderSet();
+    scheduleChain();
+  }, wait);
+}
+function shortNote(n){ if (!n) return '…'; const i = n.indexOf(' '); return n.length > 28 ? n.slice(0, 27) + '…' : n; }
+async function startMemberAt(m, when){
+  const p = players[m.player]; if (!p) return;
+  const b = await buffer(m.clip); if (!actx || !scene) return;
+  const old = active[m.player];
+  const src = actx.createBufferSource(); src.buffer = b; src.loop = true;
+  const gain = actx.createGain(); gain.gain.value = 0;
+  const filt = actx.createBiquadFilter(); filt.type='lowpass'; filt.frequency.value = 12000;
+  const pan = actx.createStereoPanner();
+  src.connect(gain); gain.connect(filt); filt.connect(pan); pan.connect(master);
+  const t0 = Math.max(when, actx.currentTime + 0.02);
+  const offset = ((t0 - sceneT0) % b.duration + b.duration) % b.duration;
+  src.start(t0, offset);
+  if (old){ try { old.gain.gain.setTargetAtTime(0, t0, 0.05); old.src.stop(t0 + 0.3); } catch(e){} }
+  active[m.player] = {src, gain, filt, pan, clip:m.clip, startAt:t0 - offset, dur:b.duration, approval:0, n:0};
+  p.resting = false; p.cursor = 0; p.clip = m.clip;
+  gain.gain.setTargetAtTime(p.muted ? 0 : 1, t0, 0.05); applyMix(p, active[m.player]);
+  send({kind:'play', clip:m.clip, value:1, pos:0});
+}
+function stopMemberAt(pid, when){ const a = active[pid]; if (!a) return; const t = Math.max(when, actx.currentTime); a.gain.gain.setTargetAtTime(0, t, 0.08); try { a.src.stop(t + 0.4); } catch(e){} delete active[pid]; }
 function scheduleSceneEnd(){
   clearTimeout(sceneTimer);
   const left = Math.max(0.5, sceneSeconds - (actx.currentTime - sceneStart));
@@ -305,16 +353,19 @@ async function answerLive(pid, nudge){
   const mind = document.getElementById('usemind').checked;
   const r = await (await fetch('/respond?song='+scene.song+'&player='+pid+'&mind='+(mind?1:0)+(nudge?'&nudge='+encodeURIComponent(nudge):''), {method:'POST'})).json();
   if (!r.started){ return; }
-  answering = r.job; p.bubble = {text:'listening…', until:performance.now()+60000};
+  answering = r.job; p.bubble = {text:'listening…', until:performance.now()+60000}; p.thinking = [];
   const songAtStart = scene.song;
   const poll = setInterval(async ()=>{
     const st = await (await fetch('/respond?job='+answering)).json();
+    if (st.thoughts && st.thoughts.length){ const t = st.thoughts[st.thoughts.length-1]; p.bubble = {text: t.length > 34 ? t.slice(0,33)+'…' : t, until: performance.now()+8000};
+      for (const th of st.thoughts.slice(p.thinking.length)) heard('<i>'+esc(p.name)+'</i>: '+esc(th)); p.thinking = st.thoughts.slice(); }
     if (!st.done) return;
     clearInterval(poll); answering = null;
     if (st.error){ p.bubble = {text:'…', until:performance.now()+2000}; heard('<b>'+esc(p.name)+'</b> could not answer: '+esc(st.error)); return; }
     if (!scene || scene.song !== songAtStart || !scene.members.find(x=>x.player===pid)){ heard('<b>'+esc(p.name)+'</b> answered too late ('+esc(st.note)+')'); return; }
     const m = scene.members.find(x=>x.player===pid); m.clip = st.clip; scene.song = st.child;
-    await refreshClip(st.clip); startMember(m, 0.8);
+    await refreshClip(st.clip); if (clipsById[st.clip]) clipsById[st.clip].about = st.about || '';
+    startMember(m, 0.8);
     p.bubble = {text:'!', until:performance.now()+3000};
     heard('<b>'+esc(st.note)+'</b> in '+st.seconds+'s'+(st.kept?' · kept on the map':''));
     document.getElementById('subtitle').textContent = scene.kind + ' · ' + esc(st.note);
@@ -513,6 +564,11 @@ function draw(ts){
   sctx.strokeStyle = '#242320'; sctx.lineWidth = 1; for (let d=0; d<=1.001; d+=0.25){ const y = H*(0.30+0.52*(1-d)); sctx.beginPath(); sctx.moveTo(W*0.08+W*0.14*d, y); sctx.lineTo(W*0.92-W*0.14*d, y); sctx.stroke(); }
   sctx.fillStyle='#4a463d'; sctx.font='11px system-ui'; sctx.textAlign='left'; sctx.fillText('front', W*0.08, H*0.82); sctx.fillText('back', W*0.22, H*0.31);
   if (fft){ sctx.save(); sctx.globalAlpha = 0.14; sctx.fillStyle = '#e8c36a'; const n=48, bw=W/n; for(let i=0;i<n;i++){ const v=fft[Math.floor(i*fft.length/n/2)]/255; sctx.fillRect(i*bw+1, H*0.86-v*H*0.2, bw-2, v*H*0.2);} sctx.restore(); }
+  // attention: who is answering whom
+  for (const p of Object.values(players)){ const a = active[p.id]; const c = a ? clipsById[a.clip] : null; if (!c || !c.about || !players[c.about] || p.resting) continue;
+    const s1 = stagePos(p), s2 = stagePos(players[c.about]); const pulse = 0.25 + 0.2*Math.sin(now/300);
+    sctx.strokeStyle = p.color; sctx.globalAlpha = pulse; sctx.lineWidth = 2; sctx.setLineDash([6, 8]); sctx.lineDashOffset = -now/40;
+    sctx.beginPath(); sctx.moveTo(s1.px, s1.py); sctx.lineTo(s2.px, s2.py); sctx.stroke(); sctx.setLineDash([]); sctx.globalAlpha = 1; }
   // players, back to front
   const list = Object.values(players).sort((a,b)=>b.depth-a.depth);
   for (const p of list){

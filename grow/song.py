@@ -69,6 +69,8 @@ class Song:
     scale: str = ""                       # the scale the band was tuned to, if any
     root_hz: float = 110.0
     groove: str = "free"
+    tried: list[str] = field(default_factory=list)   # what the answering player considered
+    chose: str = ""                                   # and how it chose
 
     @property
     def beat(self) -> float:
@@ -328,7 +330,7 @@ def hear_part(archive: Archive, text: str, song: Song) -> tuple[Rendered, Path]:
     return r, d
 
 
-def keep_part(archive: Archive, genome: Genome, clip_dir: Path, song: Song, family: str, desc: Descriptors) -> Clip:
+def keep_part(archive: Archive, genome: Genome, clip_dir: Path, song: Song, family: str, desc: Descriptors, about: str | None = None) -> Clip:
     """Store a part in the clip archive with status 'part' so it joins the family's repertoire."""
     genome.id = clip_dir.name
     if not genome.name:
@@ -339,9 +341,10 @@ def keep_part(archive: Archive, genome: Genome, clip_dir: Path, song: Song, fami
     archive.clips[clip.id] = clip
     save_genome(genome, clip_dir, extra={
         "descriptors": desc.as_dict(), "cell": list(clip.cell), "status": "part",
-        "quality": 0.0, "ear": "part", "song": song.id, "family": family,
+        "quality": 0.0, "ear": "part", "song": song.id, "family": family, "about": about or "",
         "grid": {"tempo": song.tempo, "bars": song.bars, "seconds": song.seconds},
     })
+    clip.about = about or ""
     return clip
 
 
