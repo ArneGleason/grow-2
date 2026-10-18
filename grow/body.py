@@ -47,8 +47,14 @@ def csound_available() -> bool:
     return shutil.which("csound") is not None
 
 
-def render(text: str, out_wav: Path) -> Rendered:
-    """Render .csd text to out_wav. Never raises for a bad genome."""
+def render(text: str, out_wav: Path, fixed_seconds: float | None = None) -> Rendered:
+    """Render .csd text to out_wav. Never raises for a bad genome.
+
+    With `fixed_seconds` the result is a part of a song: it is padded with
+    silence or trimmed to exactly that length so every part of a song plays
+    in lockstep, and its level is left as written (only pulled down if it
+    would clip), because a band's balance belongs to the writers.
+    """
     if not csound_available():
         return Rendered(False, "csound binary not found on PATH")
     with tempfile.TemporaryDirectory(prefix="grow-render-") as tmp:
@@ -71,16 +77,26 @@ def render(text: str, out_wav: Path) -> Rendered:
         except Exception as exc:  # noqa: BLE001
             return Rendered(False, f"unreadable audio: {exc}")
 
-    if data.shape[0] < int(MIN_SECONDS * sr):
-        return Rendered(False, f"shorter than {MIN_SECONDS:.0f}s")
     if not np.all(np.isfinite(data)):
         return Rendered(False, "audio contains NaN or inf")
-    data = data[: int(MAX_SECONDS * sr)]
+    if fixed_seconds:
+        n = int(fixed_seconds * sr)
+        if data.shape[0] < n:
+            data = np.vstack([data, np.zeros((n - data.shape[0], data.shape[1]), dtype=data.dtype)])
+        data = data[:n]
+    else:
+        if data.shape[0] < int(MIN_SECONDS * sr):
+            return Rendered(False, f"shorter than {MIN_SECONDS:.0f}s")
+        data = data[: int(MAX_SECONDS * sr)]
 
     peak = float(np.max(np.abs(data)))
     if peak < 1e-5:
         return Rendered(False, "silent")
-    data = data * (TARGET_PEAK / peak)
+    if fixed_seconds:
+        if peak > 0.95:
+            data = data * (0.95 / peak)
+    else:
+        data = data * (TARGET_PEAK / peak)
 
     mono = data.mean(axis=1)
     frame = int(0.05 * sr)
@@ -90,7 +106,7 @@ def render(text: str, out_wav: Path) -> Rendered:
     frames = mono[: nframes * frame].reshape(nframes, frame)
     rms_db = 20 * np.log10(np.sqrt((frames ** 2).mean(axis=1)) + 1e-9)
     active = float((rms_db > SILENCE_FLOOR_DB).mean())
-    if active < MIN_ACTIVE_RATIO:
+    if active < (0.03 if fixed_seconds else MIN_ACTIVE_RATIO):
         return Rendered(False, f"mostly silent (active {active:.0%})")
 
     out_wav.parent.mkdir(parents=True, exist_ok=True)

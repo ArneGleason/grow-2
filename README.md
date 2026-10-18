@@ -26,38 +26,54 @@ macOS, `apt install csound` on Debian or Ubuntu). macOS ships only
     source .venv/bin/activate       # again in every new terminal
     pip install -e .                # numpy, scipy, soundfile
     python -m grow init             # render the six founders in seeds/ into archive/
-    python -m grow run -g 20 -b 8   # grow for 20 generations, 8 children each
+    python -m grow band init -n 4   # bands jam: four songs written together
     python -m grow sheet            # the show, at http://127.0.0.1:8765
 
-Then watch the show. The players are families: each founder's lineage is
-a character with a name, a color, and a repertoire of pieces. A set is a
-few songs; a song is a few scenes (an intro with one or two players, the
-full band, a shift where someone tries a relative of their piece, an
-outro) in which the players play together, mixed live in your browser.
+Then watch the show. The players are families: each founder's lineage is a
+character with a name and a color. A song is written together: a tempo, a
+number of bars, and one part per player, each part made in answer to the
+parts already there, every part exactly the song's length so the band plays
+in lockstep. A set is a few songs; each song plays as an intro (a part or
+two alone), the full band, a shift (a version where someone answered
+differently, or a player answering live on stage), and an outro.
 
 You conduct. Drag a player forward to hear more of them, back to hear
 less, sideways to place them. Click to silence, double-click to encourage.
-The dial on the right is your mood. The band listens: under sustained
-disapproval the least-approved player tries another piece from their
-family and says so; under sustained approval the scene is kept as a moment
-and runs longer. Between songs, if "grow between songs" is on, a
-generation is bred from what you approved and the newborns are announced
-with their parents. Pause, next scene, next song, stop, and the keyboard
-all work. Everything you do is recorded; that is the vote. The grid of
-niches is still at `/map`.
+The dial on the right is your mood. Hold it low for a few seconds and the
+player you like least answers the others again, live, in a few seconds, and
+says what they did ("echoes 1.5 beats late", "sits out bars 3 and 5",
+"moves up an octave to make room"). Hold it high and the scene is kept as a
+moment and runs longer. Between songs, if "grow between songs" is on, the
+bands write more from what you approved and the new versions are announced.
+Pause, next scene, next song, stop, and the keyboard all work. Everything
+you do is recorded; that is the vote. The grid of niches is still at `/map`.
 
-When a dozen pieces have been heard with the dial moving:
+Growing without the show:
 
-    python -m grow taste            # train the taste probe, rescore the map
-    python -m grow run -g 20        # the map now grows toward what you kept
+    python -m grow band run -g 10   # ten generations of songs: players answering each other
+    python -m grow run -g 20 -b 8   # the woodshed: families vary their own pieces alone
+    python -m grow taste            # train the taste probe from what you approved, rescore
 
 Optional ears and minds:
 
     pip install -e '.[clap]'        # CLAP audio embeddings for novelty and taste
-    GROW_MODEL=qwen3:8b python -m grow run -g 20 --mind   # a local Ollama model authors a share of children
+    GROW_MODEL=qwen3:8b python -m grow band run -g 10 --mind   # a local Ollama model writes parts with the others in front of it
 
 The archive directory is the terrarium. It is not committed; the source is
 the seeds and the loop.
+
+## How a part answers
+
+A responder is a relation to what the others are playing, never an opinion
+about whether it is good: echo another part's rhythm late by some beats,
+double it in unison, play where the others are quiet, thin where they are
+busy and thicken where they are sparse, move register away from a
+neighbor, sit out a bar or two, or vary the part without looking. With the
+mind on, a language model writes the part with the other parts in front of
+it. A player drafts a few candidates, hears each in the mix, and puts
+forward the one its own ear prefers: before any approval exists that ear is
+geometry (did my part change the mix, is the mix new for this family);
+after, it is a probe trained on your reaction to songs this player was in.
 
 ## What the map shows (at `/map`)
 

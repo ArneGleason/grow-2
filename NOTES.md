@@ -125,3 +125,50 @@ Next, if this is fun: pieces that know about each other. A scene is
 itself a genome (who, which piece, where), and kept moments are the first
 population of arrangements. Then a shared pulse so players can lock, and
 players whose ears differ.
+
+## 2026-10-18 — written together
+
+Arne, after the band: no honest evaluation is possible while the parts
+were never written together. A collage is ruined by its worst element and
+cannot show something coming together well. The parts have to respond to
+each other, each in a way it independently thinks might work, and bear
+fruit or not.
+
+Built: the song is now the organism. A song is a tempo, a bar count, and
+one part per player, every part rendered to exactly the song's length so
+the band plays in lockstep (no more drift between loops). A band starts by
+jamming in sequence: the first player lays down a founder piece fitted to
+the grid, each next player joins with a fitted piece and then answers what
+is already there. Growth is responding: a child song is the parent with one
+player's part rewritten given the others. Responders (`respond.py`) are
+relations, not judgments: echo, double, gaps, contrast, room, rest, self,
+and the mind with the other parts in its prompt. A player drafts three,
+hears each in the mix, and puts forward the one its own ear prefers;
+before any approval exists that ear is geometry (the part must change the
+mix; the mix should be new for the family), after it is a per-family probe
+trained on Arne's reactions to songs that player was in
+(`taste.train_families`). Songs have their own map (`SongArchive`), with a
+duplicate check. The show plays songs: intro, full band, shift (a child
+where someone answered differently, or a live answer on stage), outro.
+Holding the dial low makes the least-approved player answer live in a few
+seconds, and the stem swaps in at the matching phase of the loop. Between
+songs, breeding is now song breeding.
+
+What it did on the scratch archive: two jams (`fog river`: Tick + Chime +
+Moss at 96; `burnt marsh`: Weather + Squelch + Tick at 84), lockstep
+confirmed to the sample, children like "Weather echoes 1.5 beats late",
+"Chime sits this one out", "Squelch joins and answers"; a live answer in
+2.2 s under disapproval in the headless browser ("Chime moves up an
+octave to make room"), kept on the map.
+
+Honest limits: the founders were not written for any grid, so the first
+jams are founders bent onto a grid, and the answering is cheap relations
+plus whatever the mind can do. "Independently thinks it might work" is
+real only once the per-family probes exist, which needs an evening of
+dial. The mind path was exercised only with a stub here. Nobody has
+listened.
+
+Next: listen. If songs written together sound like a band more than the
+collages did, the next moves are a shared pulse the mind is told about
+(it is: the grid is in the prompt) and letting the players' ears disagree,
+which they will as soon as each has its own probe.

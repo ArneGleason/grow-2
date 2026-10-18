@@ -33,14 +33,11 @@ from . import ARCHIVE_DIR
 from .archive import Archive, Clip, GRID
 from .genome import instrument_labels, score_events
 from .taste import read_events
+from .song import SongArchive, Song, stage_name
 
 STATIC = Path(__file__).parent / "static"
 
-# stage names for the founders; anything else takes its founder's first word
-STAGE_NAMES = {
-    "drone-additive": "Moss", "fm-bells": "Chime", "grain-weather": "Weather",
-    "noise-drums": "Tick", "pluck-garden": "Pluck", "squelch": "Squelch",
-}
+from .song import STAGE_NAMES
 
 
 def _clip_payload(archive: Archive, c: Clip, with_score: bool = False) -> dict:
@@ -79,21 +76,21 @@ def _map_payload(archive: Archive) -> dict:
 
 def _players(archive: Archive, prefs: dict[str, float]) -> list[dict]:
     fams: dict[str, list[Clip]] = {}
-    for c in archive.alive():
-        fams.setdefault(archive.family_of(c.id), []).append(c)
+    for c in archive.clips.values():
+        if c.status in ("alive", "part"):
+            fams.setdefault(archive.family_of(c.id), []).append(c)
     roots = sorted(fams, key=lambda rid: archive.clips[rid].genome.created if rid in archive.clips else 0)
     players = []
     for i, rid in enumerate(roots):
         root = archive.clips.get(rid)
         founder = (root.genome.name if root else rid) or rid
-        name = STAGE_NAMES.get(founder, founder.split("-")[0].capitalize() or rid)
         rep = []
         for c in sorted(fams[rid], key=lambda c: c.genome.created):
             d = _clip_payload(archive, c, with_score=True)
             d["pref"] = prefs.get(c.id, 0.0)
             d["heard"] = c.id in prefs
             rep.append(d)
-        players.append({"id": rid, "name": name, "founder": founder, "color": i, "repertoire": rep})
+        players.append({"id": rid, "name": stage_name(archive, rid), "founder": founder, "color": i, "repertoire": rep})
     return players
 
 
@@ -104,37 +101,105 @@ def _pick_clip(player: dict, rng: random.Random, exclude: str | None = None) -> 
     return rng.choices(reps, weights=w)[0]["id"]
 
 
-def _songs(players: list[dict], n_songs: int, rng: random.Random) -> list[dict]:
-    songs = []
-    if not players:
-        return songs
-    for _ in range(n_songs):
-        k = min(len(players), rng.choice([2, 3, 3, 4, 4, 5]))
-        cast = rng.sample(players, k)
-        base = {p["id"]: _pick_clip(p, rng) for p in cast}
-        order = [p["id"] for p in cast]
-        rng.shuffle(order)
-        slots = sorted(rng.sample(range(10), k))
-        xs = {pid: 0.12 + 0.76 * (slots[i] + 0.5) / 10 for i, pid in enumerate(order)}
-        depths = {pid: rng.uniform(0.15, 0.7) for pid in order}
+def _song_payload(archive: Archive, songs: SongArchive, song: Song, prefs: dict[str, float]) -> dict:
+    return {"id": song.id, "name": song.name, "note": song.note, "author": song.author, "generation": song.generation,
+            "seconds": song.seconds, "tempo": song.tempo, "bars": song.bars, "status": song.status,
+            "parts": {fam: cid for fam, cid in song.parts.items() if cid in archive.clips},
+            "pref": prefs.get(song.id, 0.0), "heard": song.id in prefs,
+            "lineage": [{"id": a.id, "note": a.note, "author": a.author, "generation": a.generation} for a in songs.lineage(song.id)]}
 
-        def members(ids: list[str], clips: dict[str, str]) -> list[dict]:
-            return [{"player": pid, "clip": clips[pid], "x": round(xs[pid], 3), "depth": round(depths[pid], 3), "muted": False} for pid in ids]
 
-        half = max(1, k // 2)
-        shifted = dict(base)
-        who = rng.choice(cast)
-        shifted[who["id"]] = _pick_clip(who, rng, exclude=base[who["id"]])
+def _songs(archive: Archive, songs: SongArchive, players: list[dict], n_songs: int, rng: random.Random, prefs: dict[str, float]) -> list[dict]:
+    """A set: songs the band wrote together, each as intro / full / shift / outro.
+
+    The shift is a child of the song when one exists (someone answered
+    differently); otherwise it is marked live and a player answers on stage.
+    """
+    alive = songs.alive()
+    if not alive:
+        return []
+    weights = [math.exp(min(prefs.get(s.id, 0.0), 3.0)) * (1.6 if s.id not in prefs else 1.0) for s in alive]
+    picks: list[Song] = []
+    pool = list(alive)
+    names: set[str] = set()
+    for _ in range(min(n_songs, len(pool))):
+        fresh = [p for p in pool if p.name not in names] or pool   # one version of each song per set
+        i = rng.choices(range(len(fresh)), weights=[weights[alive.index(p)] for p in fresh])[0]
+        pick = fresh[i]; pool.remove(pick); names.add(pick.name); picks.append(pick)
+    by_id = {p["id"]: p for p in players}
+    out = []
+    for song in picks:
+        fams = [f for f in song.parts if f in by_id and song.parts[f] in archive.clips]
+        if not fams:
+            continue
+        order = list(fams); rng.shuffle(order)
+        slots = sorted(rng.sample(range(10), len(order)))
+        xs = {f: 0.12 + 0.76 * (slots[i] + 0.5) / 10 for i, f in enumerate(order)}
+        depths = {f: rng.uniform(0.15, 0.7) for f in order}
+
+        def members(sg: Song, ids: list[str]) -> list[dict]:
+            return [{"player": f, "clip": sg.parts[f], "x": round(xs.get(f, 0.5), 3), "depth": round(depths.get(f, 0.4), 3), "muted": False}
+                    for f in ids if f in sg.parts and sg.parts[f] in archive.clips]
+
+        half = max(1, len(order) // 2)
+        kids = [k for k in songs.children(song.id) if k.descriptors and k.status in ("alive", "declined", "evicted")]
+        shift = rng.choice(kids) if kids else None
+        loops = 1 if song.seconds > 24 else 2
+        loop = round(song.seconds, 3)
         scenes = [
-            {"kind": "intro", "members": members(order[:half], base), "seconds": rng.randint(16, 24)},
-            {"kind": "full", "members": members(order, base), "seconds": rng.randint(28, 44)},
-            {"kind": "shift", "members": members(order, shifted), "seconds": rng.randint(24, 40), "shifted": who["id"]},
-            {"kind": "outro", "members": members(order[-half:], shifted), "seconds": rng.randint(14, 22)},
+            {"kind": "intro", "song": song.id, "members": members(song, order[:half]), "seconds": round(song.seconds * 1, 1), "loop": loop},
+            {"kind": "full", "song": song.id, "members": members(song, order), "seconds": round(song.seconds * loops, 1), "loop": loop},
         ]
-        names = {p["id"]: p["name"] for p in cast}
-        title = " & ".join(names[pid] for pid in order)
-        songs.append({"title": title, "cast": order, "scenes": scenes})
-    return songs
+        if shift is not None:
+            scenes.append({"kind": "shift", "song": shift.id, "members": members(shift, [f for f in order if f in shift.parts] + [f for f in shift.parts if f not in order]),
+                           "seconds": round(shift.seconds * loops, 1), "loop": round(shift.seconds, 3), "note": shift.note})
+        else:
+            scenes.append({"kind": "shift", "song": song.id, "members": members(song, order), "seconds": round(song.seconds * loops, 1), "loop": loop,
+                           "live": rng.choice(order), "note": "someone answers live"})
+        scenes.append({"kind": "outro", "song": song.id, "members": members(song, order[-half:]), "seconds": round(song.seconds * 1, 1), "loop": loop})
+        title = song.name + " · " + " & ".join(by_id[f]["name"] for f in order)
+        out.append({"id": song.id, "title": title, "cast": order, "scenes": scenes, "song": _song_payload(archive, songs, song, prefs)})
+    return out
+
+
+class LiveRespond:
+    """A player answers on stage: one job at a time, in a background thread."""
+
+    def __init__(self, root: Path):
+        self.root = root
+        self.lock = threading.Lock()
+        self.jobs: dict[str, dict] = {}
+
+    def start(self, song_id: str, family: str, mind: bool, nudge: str | None) -> dict:
+        job_id = f"{song_id}:{family}:{int(time.time())}"
+        with self.lock:
+            if any(not j.get("done") for j in self.jobs.values()):
+                return {"started": False, "reason": "someone is already answering"}
+            self.jobs[job_id] = {"done": False, "song": song_id, "family": family, "started": time.time()}
+        threading.Thread(target=self._run, args=(job_id, song_id, family, mind, nudge), daemon=True).start()
+        return {"started": True, "job": job_id}
+
+    def _run(self, job_id: str, song_id: str, family: str, mind: bool, nudge: str | None) -> None:
+        from .band import Band
+        from .respond import respond
+        job = self.jobs[job_id]
+        try:
+            b = Band(self.root, use_mind=mind, verbose=False)
+            song = b.songs.songs.get(song_id)
+            if song is None or family not in song.parts:
+                job.update(done=True, error="no such song or player"); return
+            child, why = respond(b.archive, b.songs, song, family, b.rng, b.use_mind, k=3, nudge=nudge)
+            if child is None:
+                job.update(done=True, error=why); return
+            child.name = song.name
+            kept, how = b.songs.offer(child, b.ear)
+            job.update(done=True, child=child.id, clip=child.parts[family], note=child.note, kept=kept, how=how,
+                       seconds=round(time.time() - job["started"], 1))
+        except Exception as exc:  # noqa: BLE001
+            job.update(done=True, error=str(exc)[:200])
+
+    def status(self, job_id: str) -> dict:
+        return self.jobs.get(job_id, {"done": True, "error": "unknown job"})
 
 
 class LiveGrow:
@@ -159,15 +224,14 @@ class LiveGrow:
         return True
 
     def _run(self, batch: int, mind: bool) -> None:
-        from .grow import Grower
+        from .band import Band
         t0 = time.time()
         try:
             prefs = read_events(self.events)
-            g = Grower(self.root, use_mind=mind, verbose=False)
-            weights = {c.id: math.exp(min(prefs.get(c.id, 0.0), 3.0)) for c in g.archive.alive()}
-            kept = g.generation(batch=batch, weights=weights)
-            self.last = {"kept": kept, "tried": batch, "born": g.born, "seconds": round(time.time() - t0),
-                         "rejected": [r["reason"] for r in g.archive.rejections][-batch:], "when": time.time()}
+            b = Band(self.root, use_mind=mind, verbose=False)
+            weights = {s.id: math.exp(min(prefs.get(s.id, 0.0), 3.0)) for s in b.songs.alive()}
+            kept = b.generation(batch=batch, weights=weights)
+            self.last = {"kept": kept, "tried": batch, "born": b.born, "seconds": round(time.time() - t0), "when": time.time()}
             self.count += 1
         except Exception as exc:  # noqa: BLE001
             self.last = {"error": str(exc)[:200], "when": time.time()}
@@ -181,6 +245,7 @@ def serve(root: Path | str = ARCHIVE_DIR, port: int = 8765) -> None:
     moments = root / "moments.jsonl"
     rng = random.Random()
     live = LiveGrow(root, events)
+    answering = LiveRespond(root)
 
     class Handler(SimpleHTTPRequestHandler):
         def __init__(self, *a, **k):
@@ -216,11 +281,16 @@ def serve(root: Path | str = ARCHIVE_DIR, port: int = 8765) -> None:
                 self._json({"players": _players(arc, read_events(events)), "status": arc.status_lines()[0]})
             elif url.path == "/show":
                 arc = Archive.open(root)
-                players = _players(arc, read_events(events))
+                prefs = read_events(events)
+                players = _players(arc, prefs)
+                sa = SongArchive(root)
                 n = max(1, min(12, int(q.get("songs", ["4"])[0])))
-                self._json({"players": players, "songs": _songs(players, n, rng), "status": arc.status_lines()[0]})
+                self._json({"players": players, "songs": _songs(arc, sa, players, n, rng, prefs),
+                            "status": arc.status_lines()[0] + " · " + sa.status_line()})
             elif url.path == "/grow":
                 self._json(live.status())
+            elif url.path == "/respond":
+                self._json(answering.status(q.get("job", [""])[0]))
             else:
                 super().do_GET()
 
@@ -234,6 +304,11 @@ def serve(root: Path | str = ARCHIVE_DIR, port: int = 8765) -> None:
                 mind = q.get("mind", ["0"])[0] in ("1", "true", "yes")
                 started = live.start(batch, mind)
                 self._json({"started": started, **live.status()})
+                return
+            if url.path == "/respond":
+                mind = q.get("mind", ["0"])[0] in ("1", "true", "yes")
+                nudge = q.get("nudge", [None])[0]
+                self._json(answering.start(q.get("song", [""])[0], q.get("player", [""])[0], mind, nudge))
                 return
             if url.path == "/moment":
                 try:

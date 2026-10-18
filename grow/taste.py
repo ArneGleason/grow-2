@@ -128,6 +128,13 @@ class Probe:
             return None
         return cls(json.loads(path.read_text()))
 
+    def score_feats(self, feats: np.ndarray) -> float:
+        """Score a raw feature vector (no embedding), e.g. a song mix."""
+        x = (np.asarray(feats) - self.mu) / self.sd
+        if len(x) + 1 != len(self.w):
+            return 0.0
+        return float(np.dot(self.w[:-1], x) + self.w[-1])
+
     def score(self, clip: Clip) -> float:
         x = _design(clip, self.mu, self.sd, self.use_embedding)
         if len(x) + 1 != len(self.w):
@@ -135,3 +142,38 @@ class Probe:
             if len(x) + 1 != len(self.w):
                 return 0.0
         return float(np.dot(self.w[:-1], x) + self.w[-1])
+
+
+MIN_FAMILY_VOTES = 8
+
+
+def train_families(archive: Archive, events_path: Path, root: Path, ridge: float = 2.0) -> dict[str, dict]:
+    """One probe per family: that player's ear, trained only on the listener's
+    reaction to pieces that player played. Saved as taste-<family>.json."""
+    prefs = read_events(events_path)
+    by_family: dict[str, list[Clip]] = {}
+    for cid in prefs:
+        c = archive.clips.get(cid)
+        if c is not None:
+            by_family.setdefault(archive.family_of(cid), []).append(c)
+    out = {}
+    pool = archive.alive() or list(archive.clips.values())
+    feats = np.stack([c.feats() for c in pool]) if pool else None
+    for fam, voted in by_family.items():
+        if len(voted) < MIN_FAMILY_VOTES or feats is None:
+            continue
+        mu, sd = feats.mean(axis=0), feats.std(axis=0) + 1e-6
+        X = np.stack([_design(c, mu, sd, False) for c in voted])
+        y = np.array([prefs[c.id] for c in voted])
+        X1 = np.hstack([X, np.ones((len(X), 1))])
+        lam = ridge * np.eye(X1.shape[1]); lam[-1, -1] = 0.0
+        w = np.linalg.solve(X1.T @ X1 + lam, X1.T @ y)
+        model = {"weights": w.tolist(), "mu": mu.tolist(), "sd": sd.tolist(), "use_embedding": False,
+                 "n_votes": len(voted), "family": fam, "feature_keys": FEATURE_KEYS}
+        (root / f"taste-{fam}.json").write_text(json.dumps(model, indent=1))
+        out[fam] = model
+    return out
+
+
+def family_probe(root: Path, family: str) -> "Probe | None":
+    return Probe.load(root / f"taste-{family}.json")

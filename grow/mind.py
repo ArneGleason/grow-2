@@ -80,6 +80,31 @@ def rewrite(parent: Genome, facts: str, nudge: str, rng: random.Random) -> Genom
     return parent.child(csd + "\n", "mind", f"asked for: {nudge}")
 
 
+SYSTEM_RESPOND = """You write one player's part for a small band piece, as a Csound .csd.
+Return exactly one complete .csd between <CsoundSynthesizer> and </CsoundSynthesizer> and nothing else.
+Keep the header lines sr, ksmps, nchnls and 0dbfs = 1 unchanged. Keep amplitudes between 0 and 0.8.
+The piece has a fixed grid: a tempo, a number of 4-beat bars, a total length in seconds. Every score event must start before the total length and come before the final e line.
+You are writing ONE part. The other players' parts are given so you can respond to them: answer, echo, double, fill their gaps, contrast, make room in register, or rest for stretches. Silence is allowed.
+Keep this player's instrument identity unless asked to change it. Use only opcodes that exist in Csound 6. Nothing has to be in tune or pleasant; it has to relate to the others, and it has to render."""
+
+
+def respond_part(my_part: str, player_name: str, others: list[tuple[str, str]], grid: str, facts: str, nudge: str) -> str | None:
+    """Rewrite one player's part given the other parts. Returns .csd text or None."""
+    ctx = "\n\n".join(f"=== {name}'s part ===\n{text}" for name, text in others) or "(no one else is playing yet)"
+    user = (
+        f"Grid: {grid}.\n\n{ctx}\n\n=== {player_name}'s current part (yours) ===\n{my_part}\n\n"
+        f"What the band sounds like without you: {facts}.\n"
+        f"Write {player_name}'s part so that it {nudge}. Return the complete .csd only."
+    )
+    reply = _chat(SYSTEM_RESPOND, user, num_predict=3000)
+    if not reply:
+        return None
+    csd = extract_csd(reply)
+    if not csd or csd == my_part:
+        return None
+    return csd + "\n"
+
+
 def name(facts: str, lineage_names: list[str], rng: random.Random) -> str | None:
     user = f"Facts: {facts}.\nAncestors: {', '.join(lineage_names) or 'none'}.\nName it."
     reply = _chat(SYSTEM_NAME, user, num_predict=16)

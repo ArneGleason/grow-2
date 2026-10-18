@@ -6,6 +6,8 @@
   python -m grow sheet                open the listening sheet (then listen)
   python -m grow taste                train the taste probe from your votes
   python -m grow status               print the map
+  python -m grow band init -n 3       bands jam: songs written together
+  python -m grow band run -g 10       grow songs by responding
 """
 
 from __future__ import annotations
@@ -29,6 +31,13 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--mind-share", type=float, default=0.3)
     p.add_argument("--no-embedding", action="store_true")
     p.add_argument("--seed", type=int)
+    p = sub.add_parser("band")
+    p.add_argument("what", choices=["init", "run", "status"])
+    p.add_argument("-n", "--songs", type=int, default=3)
+    p.add_argument("-g", "--generations", type=int, default=5)
+    p.add_argument("-b", "--batch", type=int, default=6)
+    p.add_argument("--mind", action="store_true")
+    p.add_argument("--seed", type=int)
     p = sub.add_parser("sheet"); p.add_argument("--port", type=int, default=8765)
     sub.add_parser("taste")
     sub.add_parser("status")
@@ -45,6 +54,18 @@ def main(argv: list[str] | None = None) -> None:
         from .grow import Grower
         g = Grower(a.archive, seed=a.seed, use_mind=a.mind, use_embedding=False if a.no_embedding else None)
         g.run(a.generations, a.batch, a.mind_share)
+    elif a.cmd == "band":
+        from .band import Band
+        b = Band(a.archive, seed=a.seed, use_mind=a.mind)
+        if a.what == "init":
+            b.init_songs(a.songs)
+        elif a.what == "run":
+            from .taste import read_events
+            prefs = read_events(Path(a.archive) / "events.csv")
+            import math as _m
+            weights = {s.id: _m.exp(min(prefs.get(s.id, 0.0), 3.0)) for s in b.songs.alive()} if prefs else None
+            b.run(a.generations, a.batch, weights)
+        print(b.songs.status_line())
     elif a.cmd == "sheet":
         from .sheet import serve
         serve(a.archive, a.port)

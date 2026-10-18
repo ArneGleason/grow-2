@@ -27,10 +27,16 @@ plan document to keep in sync.
     python3 -m venv .venv && source .venv/bin/activate
     pip install -e .                # numpy, scipy, soundfile; needs csound 6 on PATH
     python -m grow init             # render the founders in seeds/ into archive/
-    python -m grow run -g 20 -b 8   # grow: 20 generations of 8 children
-    python -m grow run -g 20 --mind # let a local Ollama model author some children
+    python -m grow band init -n 4   # bands jam: songs written together, parts in lockstep
+    python -m grow band run -g 10   # grow songs: one player answers the others per child
+    python -m grow run -g 20 -b 8   # the woodshed: families vary their own pieces alone
     python -m grow sheet            # the show at http://127.0.0.1:8765 (grid at /map)
-    python -m grow taste            # train the taste probe from the votes, rescore
+    python -m grow taste            # train the taste probes from the votes, rescore
+
+The song layer is `grow/song.py` (grid, parts, mixes, the song map),
+`grow/respond.py` (the responders and the player's own ear), and
+`grow/band.py` (jam and the song loop). Responders are relations, never
+judgments; keep it that way.
 
 Set `GROW_MODEL` to a tag from `ollama list`. Install the `clap` extra for the
 embedding ear. `archive/` is ignored by git on purpose: it is the terrarium,

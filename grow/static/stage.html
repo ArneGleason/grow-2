@@ -55,7 +55,7 @@
  </div>
  <div id="set"><h3>tonight</h3><div id="songs"></div></div>
  <div id="stagewrap"><canvas id="stage"></canvas>
-  <div id="overlay"><div><h2>Grow 2</h2>A band of players, each a family from the terrarium, plays a set of songs. Drag a player forward to hear more of them, back to hear less, sideways to place them. Click to silence, double-click to encourage. The dial on the right is your mood; the band listens to it. Between songs they breed from what you approved.<br><br><button class="big" onclick="start()">start the show</button></div></div>
+  <div id="overlay"><div><h2>Grow 2</h2>A band plays songs it wrote together: each part was made in answer to the others. Drag a player forward to hear more of them, back to hear less, sideways to place them. Click to silence, double-click to encourage. The dial on the right is your mood; hold it low and the player you like least answers the others again, live. Between songs they write more from what you approved.<br><br><button class="big" onclick="start()">start the show</button></div></div>
   <div id="toast"></div>
  </div>
  <div id="side">
@@ -74,13 +74,13 @@ let songIdx = -1, sceneIdx = -1, scene = null, song = null;
 let started = false, paused = false, inBreak = false;
 let actx = null, master = null, analyser = null, fft = null, level = 0, buffers = {};
 let active = {};              // playerId -> {src, gain, filt, pan, clip, startAt, dur, approval, n}
-let sceneStart = 0, sceneSeconds = 30, sceneExtended = false, sceneTimer = null;
+let sceneStart = 0, sceneSeconds = 30, sceneExtended = false, sceneTimer = null, sceneT0 = 0, answering = null;
 let dial = 0, lastSent = 0, lowSince = 0, highSince = 0, lastSwapAt = 0, lastMomentAt = 0;
 const queue = [];
 const stage = document.getElementById('stage'), sctx = stage.getContext('2d');
 const roll = document.getElementById('roll'), rctx = roll.getContext('2d');
 const knob = document.getElementById('knob');
-let grabbed = null, grabMoved = false, downAt = 0, hover = null;
+let grabbed = null, grabMoved = false, downAt = 0, hover = null, lastLoop = null;
 let ripples = [];
 
 // ------------------------------------------------------------------ data
@@ -106,7 +106,7 @@ function renderSet(){
     const t=document.createElement('div'); t.className='t'; t.textContent=(i+1)+'. '+s.title; t.onclick=()=>{ playScene(i,0); }; d.appendChild(t);
     s.scenes.forEach((sc,j)=>{ const e=document.createElement('div'); e.className='scene'+(i===songIdx&&j===sceneIdx?' now':'');
       const names = sc.members.map(m=>players[m.player]?players[m.player].name:'?').join(', ');
-      e.innerHTML='<span>'+sc.kind+' · '+esc(names)+'</span><span>'+sc.seconds+'s</span>'; e.onclick=()=>playScene(i,j); d.appendChild(e); });
+      e.innerHTML='<span>'+sc.kind+' · '+esc(sc.note ? sc.note : names)+'</span><span>'+Math.round(sc.seconds)+'s</span>'; e.title = names; e.onclick=()=>playScene(i,j); d.appendChild(e); });
     el.appendChild(d); });
 }
 function esc(s){ return String(s).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
@@ -145,9 +145,12 @@ async function startMember(m, fadeIn=0.6){
   const filt = actx.createBiquadFilter(); filt.type='lowpass'; filt.frequency.value = 12000;
   const pan = actx.createStereoPanner();
   src.connect(gain); gain.connect(filt); filt.connect(pan); pan.connect(master);
-  const t0 = actx.currentTime + 0.05 + Math.random()*0.4;
-  src.start(t0);
-  active[m.player] = {src, gain, filt, pan, clip:m.clip, startAt:t0, dur:b.duration, approval:0, n:0};
+  // lockstep: every part of a song starts at the scene's t0; a part that arrives
+  // mid-scene (a live answer) starts at the matching phase of the loop
+  let t0 = sceneT0, offset = 0;
+  if (actx.currentTime > sceneT0 - 0.02){ offset = ((actx.currentTime + 0.03 - sceneT0) % b.duration + b.duration) % b.duration; t0 = actx.currentTime + 0.03; }
+  src.start(t0, offset);
+  active[m.player] = {src, gain, filt, pan, clip:m.clip, startAt:t0 - offset, dur:b.duration, approval:0, n:0};
   p.resting = false; p.cursor = 0; p.clip = m.clip;
   applyMix(p, active[m.player]);
   send({kind:'play', clip:m.clip, value:1, pos:0});
@@ -158,7 +161,7 @@ function stopMember(pid, fade=1.2){
   try { a.src.stop(now + fade + 0.1); } catch(e){}
   delete active[pid]; if (players[pid]) { players[pid].resting = true; players[pid].hold = 0; }
 }
-function stopAll(fade=1.2){ for (const pid of Object.keys(active)) stopMember(pid, fade); }
+function stopAll(fade=1.2){ for (const pid of Object.keys(active)) stopMember(pid, fade); lastLoop = null; }
 
 // ------------------------------------------------------------------ scenes
 async function playScene(i, j){
@@ -166,20 +169,28 @@ async function playScene(i, j){
   clearTimeout(sceneTimer); inBreak = false;
   songIdx = (i + songs.length) % songs.length; song = songs[songIdx];
   sceneIdx = (j + song.scenes.length) % song.scenes.length; scene = song.scenes[sceneIdx];
-  sceneSeconds = scene.seconds; sceneExtended = false; sceneStart = actx.currentTime; lowSince = highSince = 0;
+  sceneSeconds = scene.seconds; sceneExtended = false; sceneStart = actx.currentTime; lowSince = highSince = 0; answering = null;
   renderSet();
   document.getElementById('title').textContent = song.title;
   const who = scene.members.map(m=>players[m.player].name+' plays '+(clipsById[m.clip]?clipsById[m.clip].name:'?')).join(' · ');
-  document.getElementById('subtitle').textContent = scene.kind + (scene.kind==='shift' && players[scene.shifted] ? ' ('+players[scene.shifted].name+' tries something else)' : '') + ' · ' + who;
+  document.getElementById('subtitle').textContent = scene.kind + (scene.note ? ' · ' + scene.note : '') + ' · ' + who;
+  if (scene.live && players[scene.live]) setTimeout(()=>answerLive(scene.live, null), 1500);
   // who leaves, who stays, who joins
   const keep = new Set(scene.members.map(m=>m.player));
   for (const pid of Object.keys(active)) if (!keep.has(pid)) stopMember(pid);
+  // same grid as the scene before: parts that continue keep the loop's phase,
+  // and parts that join or change start at that phase (see startMember)
+  const sameGrid = scene.loop && scene.loop === lastLoop;
+  let ref = null;
+  if (sameGrid) for (const m of scene.members){ const a = active[m.player]; if (a && a.clip === m.clip){ ref = a.startAt; break; } }
+  sceneT0 = ref !== null ? ref : actx.currentTime + 0.25;
   for (const m of scene.members){
     const p = players[m.player]; p.muted = m.muted;
     if (p.tx===null || p.resting){ p.tx = m.x; p.td = m.depth; }
     const a = active[m.player];
-    if (!a || a.clip !== m.clip) startMember(m);
+    if (!a || a.clip !== m.clip || !sameGrid) startMember(m);
   }
+  lastLoop = scene.loop || null;
   // the others rest along the back row, spread out so they do not pile up
   const resting = Object.values(players).filter(p=>!keep.has(p.id)).sort((a,b)=>a.x-b.x);
   resting.forEach((p,i)=>{ p.tx = resting.length===1 ? 0.5 : 0.12 + 0.76*i/(resting.length-1); p.td = 0.93 + Math.random()*0.05; });
@@ -252,31 +263,46 @@ function audible(){ return scene ? scene.members.filter(m=>active[m.player] && !
 function tickDial(now){
   if (!scene || paused || !actx) return;
   const pos = progress();
-  if (now - lastSent > 2000){ for (const m of audible()){ queue.push({kind:'dial', clip:m.clip, value:dial, pos:pos}); const a=active[m.player]; if (a){ a.approval += dial; a.n++; } } lastSent = now; }
+  if (now - lastSent > 2000){ for (const m of audible()){ queue.push({kind:'dial', clip:m.clip, value:dial, pos:pos}); const a=active[m.player]; if (a){ a.approval += dial; a.n++; } } if (scene.song) queue.push({kind:'dial', clip:scene.song, value:dial, pos:pos}); lastSent = now; }
   // sustained disapproval: the least-approved player tries a relative
   if (dial < -0.35){ if (!lowSince) lowSince = now; if (now - lowSince > 6000 && now - lastSwapAt > 12000) { lowSince = 0; lastSwapAt = now; tryAnother(); } } else lowSince = 0;
   // sustained approval: keep the moment, stay longer
   if (dial > 0.5){ if (!highSince) highSince = now; if (now - highSince > 8000 && now - lastMomentAt > 20000){ highSince = 0; lastMomentAt = now; keepMoment(); } } else highSince = 0;
 }
 function tryAnother(){
-  const aud = audible(); if (!aud.length) return;
+  const aud = audible(); if (!aud.length || answering) return;
   const m = aud.reduce((w,m)=>{ const a=active[m.player]; const s=a.n?a.approval/a.n:0; return (!w || s < w.s) ? {m, s} : w; }, null).m;
-  const p = players[m.player];
-  const others = p.repertoire.filter(c=>c.id!==m.clip);
-  if (!others.length){ p.bubble = {text:'that is all I have', until:performance.now()+3000}; heard('<b>'+esc(p.name)+'</b> has nothing else yet; grow to give them more'); return; }
-  others.sort((a,b)=>(b.heard?0:1)-(a.heard?0:1) || b.pref-a.pref);
-  const pick = others[Math.floor(Math.random()*Math.min(3, others.length))];
   send({kind:'swap', clip:m.clip, value:-1, pos:progress()});
-  m.clip = pick.id; p.bubble = {text:'trying something else', until:performance.now()+3500};
-  startMember(m, 0.8);
-  heard('<b>'+esc(p.name)+'</b> swapped to <b>'+esc(pick.name)+'</b>'+(pick.heard?'':' (new)'));
-  document.getElementById('subtitle').textContent = scene.kind+' · '+scene.members.map(m=>players[m.player].name+' plays '+(clipsById[m.clip]?clipsById[m.clip].name:'?')).join(' · ');
+  answerLive(m.player, 'does something different from what it was doing');
 }
+async function answerLive(pid, nudge){
+  if (!scene || !scene.song || answering) return;
+  const p = players[pid]; if (!p) return;
+  const mind = document.getElementById('usemind').checked;
+  const r = await (await fetch('/respond?song='+scene.song+'&player='+pid+'&mind='+(mind?1:0)+(nudge?'&nudge='+encodeURIComponent(nudge):''), {method:'POST'})).json();
+  if (!r.started){ return; }
+  answering = r.job; p.bubble = {text:'listening…', until:performance.now()+60000};
+  const songAtStart = scene.song;
+  const poll = setInterval(async ()=>{
+    const st = await (await fetch('/respond?job='+answering)).json();
+    if (!st.done) return;
+    clearInterval(poll); answering = null;
+    if (st.error){ p.bubble = {text:'…', until:performance.now()+2000}; heard('<b>'+esc(p.name)+'</b> could not answer: '+esc(st.error)); return; }
+    if (!scene || scene.song !== songAtStart || !scene.members.find(x=>x.player===pid)){ heard('<b>'+esc(p.name)+'</b> answered too late ('+esc(st.note)+')'); return; }
+    const m = scene.members.find(x=>x.player===pid); m.clip = st.clip; scene.song = st.child;
+    await refreshClip(st.clip); startMember(m, 0.8);
+    p.bubble = {text:'!', until:performance.now()+3000};
+    heard('<b>'+esc(st.note)+'</b> in '+st.seconds+'s'+(st.kept?' · kept on the map':''));
+    document.getElementById('subtitle').textContent = scene.kind + ' · ' + esc(st.note);
+  }, 1500);
+}
+async function refreshClip(id){ if (clipsById[id]) return; try { const d = await (await fetch('/players')).json(); for (const pl of d.players) for (const c of pl.repertoire) clipsById[c.id] = c; } catch(e){} }
 function keepMoment(){
   if (!scene) return;
   const snap = {song:song.title, kind:scene.kind, dial:dial, members:scene.members.map(m=>({player:players[m.player].name, clip:m.clip, name:clipsById[m.clip]?clipsById[m.clip].name:'', x:players[m.player].x, depth:players[m.player].depth, muted:players[m.player].muted}))};
   fetch('/moment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(snap)}).catch(()=>{});
   for (const m of audible()) send({kind:'moment', clip:m.clip, value:1, pos:progress()});
+  if (scene.song) send({kind:'moment', clip:scene.song, value:1, pos:progress()});
   if (!sceneExtended){ sceneExtended = true; sceneSeconds *= 1.5; scheduleSceneEnd(); }
   for (const m of scene.members) players[m.player].bubble = {text:'!', until:performance.now()+2500};
   toast('kept this moment · staying with it a while'); heard('kept <b>'+esc(scene.kind)+'</b> of '+esc(song.title));
@@ -301,10 +327,10 @@ async function growNow(auto=false){
     const l = s.last; if (!l) return;
     if (l.error){ document.getElementById('growst').textContent = 'breeding failed: '+l.error; return; }
     await refreshPlayers();
-    const names = (l.born||[]).map(b=>{ const p=players[b.family]; return (p?p.name+': ':'')+b.name+(b.parent?' (from '+b.parent+')':''); });
+    const names = (l.born||[]).map(b=> b.note ? (b.name+': '+b.note) : ((players[b.family]?players[b.family].name+': ':'')+b.name+(b.parent?' (from '+b.parent+')':'')));
     document.getElementById('growst').textContent = l.kept+' of '+l.tried+' children survived in '+l.seconds+'s';
-    if (l.kept) { toast('born: '+names.join(' · '), 6000); heard('born: '+esc(names.join(' · '))); for (const b of l.born){ const p=players[b.family]; if (p) p.bubble={text:'a new one!', until:performance.now()+4000}; } }
-    else heard('bred '+l.tried+', none survived ('+(l.rejected||[]).slice(0,2).join('; ')+')');
+    if (l.kept) { toast('new: '+names.join(' · '), 6000); heard('new: '+esc(names.join(' · '))); }
+    else heard('tried '+l.tried+' answers, none made the map');
   }, 2500);
 }
 
