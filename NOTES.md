@@ -262,3 +262,22 @@ it: takes a breath", "chose: takes a breath at bar 2 and comes back lower".
 Honest limit: gestures are blind transformations and the ear is still
 novelty until Arne's dial trains the per-family probes; so for now they
 make parts move, not make them good. That is the right order.
+
+## 2026-10-18 — persistence
+
+Arne asked how the evolution persists and whether it accumulates. It does:
+`archive/` is read on every request and nothing resets unless deleted; the
+one wipe was for the new founders. The gap was durability: the folder on
+one Mac was the only copy, and it was too big to put in git because of
+the audio.
+
+Changed: audio is now a cache. `Archive.ensure_wav` renders a piece's WAV
+from its genome when the file is missing; parts and mixes go through it,
+and the sheet renders on demand before serving. `python -m grow stats`
+reports what has accumulated (pieces by status and birth, songs,
+reactions by kind, moments, directions, probes, text vs audio on disk).
+`python -m grow backup` writes a dated tarball of the text only. `init`
+writes an `archive/.gitignore` so the archive can be its own git repo.
+
+Verified: a backup of the scratch archive restored with zero WAVs served
+a piece on demand and answered a live respond (every stem re-rendered).

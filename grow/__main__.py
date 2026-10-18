@@ -8,6 +8,8 @@
   python -m grow status               print the map
   python -m grow band init -n 3       bands jam: songs written together
   python -m grow band run -g 10       grow songs by responding
+  python -m grow stats                what has accumulated
+  python -m grow backup               snapshot the archive's text (genomes, songs, events) to backups/
 """
 
 from __future__ import annotations
@@ -41,6 +43,8 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("sheet"); p.add_argument("--port", type=int, default=8765)
     sub.add_parser("taste")
     sub.add_parser("status")
+    sub.add_parser("stats")
+    p = sub.add_parser("backup"); p.add_argument("--to", default="backups")
     a = ap.parse_args(argv)
 
     if a.cmd == "init":
@@ -83,6 +87,14 @@ def main(argv: list[str] | None = None) -> None:
             probe = Probe(model)
             arc.rescore(lambda c: (0.7 * probe.score(c) + 0.3 * arc.novelty(c.feats(), c.embedding, exclude=c.id), f"taste{model['n_votes']}"))  # same blend as Grower.ear
             print("archive rescored with the new ear")
+    elif a.cmd == "stats":
+        from .stats import report
+        for line in report(Path(a.archive)):
+            print(line)
+    elif a.cmd == "backup":
+        from .stats import backup
+        out = backup(Path(a.archive), Path(a.to))
+        print(f"wrote {out}")
     elif a.cmd == "status":
         from .archive import Archive
         for line in Archive.open(a.archive).status_lines():

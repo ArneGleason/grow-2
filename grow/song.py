@@ -237,6 +237,12 @@ class SongArchive:
     def song_dir(self, song_id: str) -> Path:
         return self.dir / song_id
 
+    def ensure_mix(self, archive: Archive, song: Song) -> Path | None:
+        mix = self.song_dir(song.id) / "mix.wav"
+        if mix.exists():
+            return mix
+        return mix if render_mix(archive, self, song) is not None else None
+
     def save(self, song: Song) -> None:
         d = self.song_dir(song.id); d.mkdir(parents=True, exist_ok=True)
         (d / "song.json").write_text(json.dumps(asdict(song), indent=1))
@@ -319,7 +325,8 @@ class SongArchive:
 # ----------------------------------------------------------- parts on disk
 
 def part_wav(archive: Archive, clip_id: str) -> Path:
-    return archive.clip_dir(clip_id) / "clip.wav"
+    wav = archive.ensure_wav(clip_id)
+    return wav if wav is not None else archive.clip_dir(clip_id) / "clip.wav"
 
 
 def hear_part(archive: Archive, text: str, song: Song) -> tuple[Rendered, Path]:

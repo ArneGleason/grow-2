@@ -321,6 +321,7 @@ class LiveGrow:
 
 def serve(root: Path | str = ARCHIVE_DIR, port: int = 8765) -> None:
     root = Path(root).resolve()
+    Archive.open(root).prepare_root()   # existing archives get their .gitignore too
     events = root / "events.csv"
     moments = root / "moments.jsonl"
     rng = random.Random()
@@ -373,6 +374,10 @@ def serve(root: Path | str = ARCHIVE_DIR, port: int = 8765) -> None:
                 self._json({"direction": direction_mod.asdict_(direction_mod.load(root)),
                             "options": {"moods": list(MOODS), "palettes": PALETTES, "spaces": SPACES, "grooves": GROOVES,
                                         "pitches": PITCHES, "scales": list(SCALES)}})
+            elif url.path.startswith("/clips/") and url.path.endswith("/clip.wav"):
+                cid = url.path.split("/")[2]
+                Archive.open(root).ensure_wav(cid)   # re-render if the cache is gone
+                super().do_GET()
             elif url.path == "/grow":
                 self._json(live.status())
             elif url.path in ("/respond", "/join", "/regrid"):

@@ -122,6 +122,7 @@ class Grower:
         return kept
 
     def init_from_seeds(self, seeds_dir: Path | str = SEEDS_DIR) -> int:
+        self.archive.prepare_root()
         n = 0
         for path in sorted(Path(seeds_dir).glob("*.csd")):
             g = load_seed(path)

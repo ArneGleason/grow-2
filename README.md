@@ -81,8 +81,31 @@ Optional ears and minds:
     pip install -e '.[clap]'        # CLAP audio embeddings for novelty and taste
     GROW_MODEL=qwen3:8b python -m grow band run -g 10 --mind   # a local Ollama model writes parts with the others in front of it
 
-The archive directory is the terrarium. It is not committed; the source is
-the seeds and the loop.
+## What persists, and where
+
+The `archive/` folder is the terrarium's memory, and it accumulates across
+every run: nothing starts over unless you delete it. Each piece is a folder
+with its genome (the Csound text), its metadata and lineage, and its
+rendered audio. Each song is a folder with its parts, who answered whom,
+what the player considered, and a mix. Every reaction you have (dial,
+drag, skip, encourage, silence, moment) goes to `events.csv`; directions
+to `direction.json` and `direction.log`; kept scenes to `moments.jsonl`;
+trained ears to `taste*.json`. Pieces that lose their place on a map keep
+their files, so lineages never break.
+
+Audio is a cache: a genome renders to the same sound every time, so when a
+WAV is missing it is rendered on first use. That makes the text part of
+the archive the whole archive, and small. `python -m grow stats` says what
+has accumulated; `python -m grow backup` writes a dated tarball of the text
+to `backups/`. To restore, unpack it as `archive/` and start the sheet: the
+sound comes back as it is played. The archive has its own `.gitignore`
+(audio and embeddings excluded), so `git init` inside it makes it a data
+repository you can push anywhere. This source repository ignores
+`archive/` on purpose: the seeds and the loop are the source; the archive
+is what grew.
+
+Running `python -m grow init` again is additive: founders already present
+are left alone, new or changed founders join as new families.
 
 ## How a part answers
 

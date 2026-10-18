@@ -96,6 +96,36 @@ class Archive:
     def clip_dir(self, clip_id: str) -> Path:
         return self.root / "clips" / clip_id
 
+    def ensure_wav(self, clip_id: str) -> Path | None:
+        """The clip's audio, rendering it from the genome if the file is missing.
+
+        Audio is derivable from text, so the text is the archive and the audio
+        is a cache: a backup without WAVs comes back to life on first play.
+        """
+        clip = self.clips.get(clip_id)
+        if clip is None:
+            return None
+        wav = clip.dir / "clip.wav"
+        if wav.exists():
+            return wav
+        from .body import render
+        seconds = None
+        meta_path = clip.dir / "meta.json"
+        try:
+            grid = json.loads(meta_path.read_text()).get("grid") if meta_path.exists() else None
+            seconds = float(grid["seconds"]) if grid else None
+        except (OSError, ValueError, KeyError, TypeError):
+            seconds = None
+        r = render(clip.genome.text, wav, fixed_seconds=seconds)
+        return wav if r.ok else None
+
+    def prepare_root(self) -> None:
+        """Make the archive folder git-ready: audio and embeddings are caches."""
+        self.root.mkdir(parents=True, exist_ok=True)
+        gi = self.root / ".gitignore"
+        if not gi.exists():
+            gi.write_text("# rendered audio and embeddings are caches; they re-render from the genomes\n*.wav\n*.npy\n")
+
     def _write_meta(self, clip: Clip) -> None:
         meta = clip.genome.meta()
         meta.update({
