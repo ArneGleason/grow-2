@@ -29,6 +29,7 @@ MIN_SECONDS = 3.0
 MAX_SECONDS = 30.0
 RENDER_TIMEOUT = 40.0
 TARGET_PEAK = 0.85
+PART_LEVEL_DB = -20.0           # sounding RMS for a song part
 MIN_ACTIVE_RATIO = 0.08       # fraction of 50 ms frames above the silence floor
 SILENCE_FLOOR_DB = -50.0
 
@@ -93,8 +94,17 @@ def render(text: str, out_wav: Path, fixed_seconds: float | None = None) -> Rend
     if peak < 1e-5:
         return Rendered(False, "silent")
     if fixed_seconds:
-        if peak > 0.95:
-            data = data * (0.95 / peak)
+        # a part: level its sounding RMS to PART_LEVEL_DB so every player can be
+        # heard before the listener sets the balance; cap the peak
+        m = data.mean(axis=1)
+        fr = int(0.05 * sr)
+        nf = len(m) // fr
+        if nf:
+            fr_rms = np.sqrt((m[: nf * fr].reshape(nf, fr) ** 2).mean(axis=1))
+            loud = fr_rms[fr_rms > 10 ** (SILENCE_FLOOR_DB / 20)]
+            rms = float(np.sqrt((loud ** 2).mean())) if len(loud) else float(np.sqrt((m ** 2).mean()))
+            if rms > 1e-6:
+                data = data * min(10 ** (PART_LEVEL_DB / 20) / rms, 0.95 / peak)
     else:
         data = data * (TARGET_PEAK / peak)
 

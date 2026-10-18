@@ -25,7 +25,7 @@ macOS, `apt install csound` on Debian or Ubuntu). macOS ships only
     python3 -m venv .venv
     source .venv/bin/activate       # again in every new terminal
     pip install -e .                # numpy, scipy, soundfile
-    python -m grow init             # render the six founders in seeds/ into archive/
+    python -m grow init             # render the ten founders in seeds/ into archive/
     python -m grow sheet            # the show, at http://127.0.0.1:8765
 
 If there are no songs yet, pressing start makes the bands write their
@@ -44,6 +44,19 @@ You conduct. Drag a player forward to hear more of them, back to hear
 less, sideways to place them. Drag a resting player onto the stage and they
 join the song and answer the others. Double-click to encourage; shift and
 double-click to discourage (it silences them; again to let them back in).
+The figure at the front of the stage is you, the conductor. Click it to
+direct: a mood (mysterious, energetic, angry, tranquil, playful) sets
+defaults for the rest, and you can override any of them: which sounds
+(modular drone, digital, analog, percussive, plucked, texture, pad, voice,
+glass), the space (dry, room, hall, echo, space echo, applied live to the
+mix), a tempo range, a groove (straight, swing, broken, drone, free), and
+the pitch material (classical modes, microtonal: 19 or 31 equal divisions,
+Bohlen-Pierce, 7 equal; or free), plus a line of words for the mind. New
+songs are cast and gridded from it, parts joining a song are tuned and
+grooved to it, answers include "groove" and "tune" as relations to it, and
+"retake song" refits the current song to it on the spot. Each player has
+its own silhouette by palette.
+
 The dial on the right is your mood. Hold it low for a few seconds and the
 player you like least answers the others again, live, in a few seconds, and
 says what they did ("echoes 1.5 beats late", "sits out bars 3 and 5",

@@ -35,8 +35,33 @@ from .song import (Song, SongArchive, score_rows, with_score_rows, fnum, part_wa
                    envelope, hear_part, keep_part, discard_part, render_mix, fit_to_grid, stage_name, BEATS_PER_BAR)
 from .taste import family_probe
 from . import vary
+from .direction import Direction, groove_rows, tune_rows
 
 RESPONDERS = ["echo", "double", "gaps", "contrast", "room", "rest", "self"]
+
+
+def groove(my_text, song, direction, rng):
+    """Re-seat my onsets on the groove the conductor asked for."""
+    g = direction.groove if direction else song.groove
+    if not g or g == "free":
+        return None, ""
+    lines, rows = score_rows(my_text)
+    rows, changed = groove_rows(rows, g, song.beat, song.seconds, rng)
+    if not changed:
+        return None, ""
+    return with_score_rows(my_text, lines, rows), f"takes the {g} groove"
+
+
+def tune(my_text, song, direction, rng):
+    """Snap my pitches to the band's scale."""
+    scale = song.scale or (direction.pick_scale(rng) if direction else None)
+    if not scale:
+        return None, ""
+    lines, rows = score_rows(my_text)
+    rows, changed = tune_rows(rows, scale, song.root_hz)
+    if not changed:
+        return None, ""
+    return with_score_rows(my_text, lines, rows), f"tunes to {scale}"
 
 
 # ------------------------------------------------------------ what the others do
@@ -201,8 +226,8 @@ def rest(my_text, my_events, song, rng):
 # ------------------------------------------------------------- the response
 
 def candidates(archive: Archive, song: Song, family: str, rng: random.Random, use_mind: bool, k: int = 3,
-               nudge: str | None = None) -> list[tuple[Genome, str]]:
-    """Draft k candidate parts for `family` in `song`."""
+               nudge: str | None = None, direction: Direction | None = None) -> list[tuple[Genome, str]]:
+    """Draft k candidate parts for `family` in `song`, under the conductor's direction if any."""
     my_clip = archive.clips.get(song.parts.get(family, ""))
     if my_clip is None:
         return []
@@ -214,11 +239,17 @@ def candidates(archive: Archive, song: Song, family: str, rng: random.Random, us
     env = envelope(om, sr, 0.05)
     out: list[tuple[Genome, str]] = []
     ops = list(RESPONDERS)
+    if direction and (direction.groove != "free" or song.groove not in ("", "free")):
+        ops.append("groove")
+    if song.scale or (direction and direction.pitch != "free"):
+        ops.append("tune")
     rng.shuffle(ops)
     if use_mind and others:
         facts = describe(om, sr).facts()
         want = nudge or rng.choice(["answers them", "fills their gaps", "doubles one of them and then leaves", "contrasts them",
                                     "plays less than before", "takes the lead", "makes room for them", "argues with them"])
+        if direction:
+            want += ". The conductor asks for: " + direction.text()
         text = mind_mod.respond_part(my_text, stage_name(archive, family), others, song.grid_text(), facts, want)
         if text:
             out.append((my_clip.genome.child(text, "mind", f"asked to: {want}"), "mind"))
@@ -238,6 +269,10 @@ def candidates(archive: Archive, song: Song, family: str, rng: random.Random, us
             text, note = room(my_text, my_events, song, rng)
         elif op == "rest":
             text, note = rest(my_text, my_events, song, rng)
+        elif op == "groove":
+            text, note = groove(my_text, song, direction, rng)
+        elif op == "tune":
+            text, note = tune(my_text, song, direction, rng)
         elif op == "self":
             g = vary.blind(my_clip.genome, rng)
             text, note = g.text, g.note
@@ -260,9 +295,10 @@ def player_ear(archive: Archive, songs: SongArchive, song: Song, family: str):
 
 
 def respond(archive: Archive, songs: SongArchive, song: Song, family: str, rng: random.Random,
-            use_mind: bool = False, k: int = 3, nudge: str | None = None, verbose: bool = False) -> tuple[Song | None, str]:
+            use_mind: bool = False, k: int = 3, nudge: str | None = None, verbose: bool = False,
+            direction: Direction | None = None) -> tuple[Song | None, str]:
     """One player answers the others. Returns (child song, reason) or (None, why not)."""
-    drafts = candidates(archive, song, family, rng, use_mind, k, nudge)
+    drafts = candidates(archive, song, family, rng, use_mind, k, nudge, direction)
     if not drafts:
         return None, "nothing to respond with"
     om, sr = others_mix(archive, song, family)
@@ -306,13 +342,17 @@ def respond(archive: Archive, songs: SongArchive, song: Song, family: str, rng: 
 # ---------------------------------------------------------------- the jam
 
 def jam(archive: Archive, songs: SongArchive, members: list[tuple[str, str]], tempo: float, bars: int,
-        rng: random.Random, use_mind: bool = False, name: str = "", verbose: bool = False) -> Song:
+        rng: random.Random, use_mind: bool = False, name: str = "", verbose: bool = False,
+        direction: Direction | None = None) -> Song:
     """A band writes a song together: the first player lays a part down, each
     next player joins with a fitted piece and then answers what is there."""
-    song = Song(tempo=tempo, bars=bars, parts={}, name=name, author="jam", note="written together")
+    scale = direction.pick_scale(rng) if direction else None
+    song = Song(tempo=tempo, bars=bars, parts={}, name=name, author="jam", note="written together",
+                scale=scale or "", root_hz=direction.root_hz if direction else 110.0, groove=direction.groove if direction else "free")
     for n, (family, clip_id) in enumerate(members):
         base = archive.clips[clip_id]
-        text = fit_to_grid(base.genome.text, song.seconds, song.beat, quantize=True, rng=rng)
+        text = fit_to_grid(base.genome.text, song.seconds, song.beat, quantize=True, rng=rng,
+                           groove=song.groove if song.groove != "free" else None, scale=song.scale or None, root_hz=song.root_hz)
         r, clip_dir = hear_part(archive, text, song)
         if not r.ok:
             discard_part(clip_dir)
@@ -323,7 +363,7 @@ def jam(archive: Archive, songs: SongArchive, members: list[tuple[str, str]], te
         clip = keep_part(archive, g, clip_dir, song, family, describe(r.audio, r.sr))
         song.parts[family] = clip.id
         if n > 0:
-            child, why = respond(archive, songs, song, family, rng, use_mind, k=3, verbose=verbose)
+            child, why = respond(archive, songs, song, family, rng, use_mind, k=3, verbose=verbose, direction=direction)
             if child is not None:
                 child.name = song.name; child.author = "jam"; child.note = f"{stage_name(archive, family)} answered on joining"
                 song = child

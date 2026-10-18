@@ -191,3 +191,39 @@ double-click discourages (silences; again to unmute).
 Verified headless: an empty archive goes from zero songs to a playing intro
 by itself; Moss dragged onto the stage came back in with the band in step;
 click leaves mute alone, shift-double-click mutes, double-click encourages.
+
+## 2026-10-18 — the conductor
+
+Arne wants a place of his own on stage to give musical direction: the
+sounds (digital, modular drone, different electronic ranges), the space
+(reverb, echo, space echo, dry), tempo, groove, and a feel (mysterious,
+energetic, angry, tranquil) that should touch tempo and pitch material,
+with classical modes optional and microtonal or no modes possible. Also
+silhouettes so players differ beyond color, and founders that actually
+have body: some sounded like a click on nothing.
+
+Built: `direction.py`. A direction is a request, never a judgment, and it
+reaches the music only through real paths: new songs pick tempo and cast
+from it; parts joining a song are grooved and tuned to it; responders gain
+"groove" and "tune" as relations; the mind is told it in words; the space
+is applied live to the mix bus in the browser (synthetic impulse responses
+for room and hall, a tempo-synced feedback delay for echo, with a slow
+wobble and darker filter for space echo). Moods are presets written out in
+the open in `MOODS`; the user can override any field. Scales: the seven
+modes, pentatonic, whole tone, 19-edo, 31-edo, Bohlen-Pierce, 7-edo, or
+free. Songs remember their scale, root, and groove so answers stay in the
+band's tuning. A "retake song" refits the current song to the direction.
+
+Founders rebuilt, ten now, each tagged with a palette and given a body:
+modular-drone, digital-chime, analog-bass, drum-kit, pluck-garden,
+grain-weather, pad-dusk, pulse-wire, voice-moth, glass-bowl. Parts are
+leveled by sounding RMS (-20 dBFS) at render so no instrument hides behind
+another; the listener sets balance by dragging. Old archives keep the old
+founders; start fresh (`rm -rf archive`, `python -m grow init`) to get the
+new ten.
+
+Verified: a tranquil/lydian direction cast Dusk, Bowl, Pluck and Moss at
+54 and 60 bpm in lydian with a drone groove, pitches snapped to the scale;
+in the browser, clicking the conductor opens the panel, choosing a mood
+updates the direction and rebuilds the space, directing records it.
+Nobody has listened.

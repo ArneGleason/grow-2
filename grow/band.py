@@ -23,8 +23,9 @@ from .ears import Descriptors, describe, features
 from .genome import Genome
 from . import mind as mind_mod
 from .respond import respond, jam
-from .song import (Song, SongArchive, fit_to_grid, hear_part, keep_part, discard_part, render_mix, stage_name)
+from .song import (Song, SongArchive, fit_to_grid, hear_part, keep_part, discard_part, render_mix, stage_name, family_palette)
 from .taste import Probe
+from . import direction as direction_mod
 
 
 class Band:
@@ -39,6 +40,7 @@ class Band:
             self.say("mind requested but Ollama is not reachable; blind responders only")
         self.probe = Probe.load(self.root / "taste.json")
         self.born: list[dict] = []
+        self.direction = direction_mod.load(self.root)
 
     def say(self, msg: str) -> None:
         if self.verbose:
@@ -71,20 +73,27 @@ class Band:
         return 0.7 * self.probe.score_feats(f) + 0.3 * nov, f"taste{self.probe.n_votes}"
 
     # ----------------------------------------------------------------- init
-    def init_songs(self, n: int = 3, tempos=(72, 84, 96, 108, 120), bars_choices=(4, 8, 8)) -> list[Song]:
+    def init_songs(self, n: int = 3, bars_choices=(4, 8, 8)) -> list[Song]:
         fams = self.families()
         founders = {fam: next((c for c in clips if c.genome.author == "seed"), clips[0]) for fam, clips in fams.items()}
         if not founders:
             self.say("no families; run `python -m grow init` first")
             return []
         out = []
+        d = self.direction
         for _ in range(n):
             k = min(len(founders), self.rng.choice([2, 3, 3, 4]))
-            cast = self.rng.sample(sorted(founders), k)
-            tempo, bars = self.rng.choice(tempos), self.rng.choice(bars_choices)
+            fam_ids = sorted(founders)
+            weights = [direction_mod.cast_weight(family_palette(self.archive, f), d) for f in fam_ids]
+            cast = []
+            pool, w = list(fam_ids), list(weights)
+            for _ in range(k):
+                i = self.rng.choices(range(len(pool)), weights=w)[0]
+                cast.append(pool.pop(i)); w.pop(i)
+            tempo, bars = d.pick_tempo(self.rng), self.rng.choice(bars_choices)
             name = self.name_song()
-            self.say(f"jam: {name} · {' + '.join(stage_name(self.archive, f) for f in cast)} · {tempo} bpm, {bars} bars")
-            song = jam(self.archive, self.songs, [(f, founders[f].id) for f in cast], tempo, bars, self.rng, self.use_mind, name, self.verbose)
+            self.say(f"jam: {name} · {' + '.join(stage_name(self.archive, f) for f in cast)} · {tempo} bpm, {bars} bars · {d.text()}")
+            song = jam(self.archive, self.songs, [(f, founders[f].id) for f in cast], tempo, bars, self.rng, self.use_mind, name, self.verbose, direction=d)
             kept, why = self.songs.offer(song, self.ear)
             self.say(f"  {'+' if kept else '-'} {song.name}: {why}  [{Descriptors(**song.descriptors).facts() if song.descriptors else 'no mix'}]")
             out.append(song)
@@ -97,7 +106,8 @@ class Band:
         if not fam_clips:
             return None, "no relative to swap in"
         base = self.rng.choice(fam_clips)
-        text = fit_to_grid(base.genome.text, song.seconds, song.beat, quantize=True, rng=self.rng)
+        text = fit_to_grid(base.genome.text, song.seconds, song.beat, quantize=True, rng=self.rng,
+                           groove=song.groove if song.groove != "free" else None, scale=song.scale or None, root_hz=song.root_hz)
         r, d = hear_part(self.archive, text, song)
         if not r.ok:
             discard_part(d); return None, f"swap failed: {r.reason}"
@@ -119,17 +129,43 @@ class Band:
 
         founders = [c for c in fams[family] if c.genome.author == "seed"] or fams[family]
         base = self.rng.choice(founders)
-        text = fit_to_grid(base.genome.text, song.seconds, song.beat, quantize=True, rng=self.rng)
+        text = fit_to_grid(base.genome.text, song.seconds, song.beat, quantize=True, rng=self.rng,
+                           groove=song.groove if song.groove != "free" else None, scale=song.scale or None, root_hz=song.root_hz)
         r, d = hear_part(self.archive, text, song)
         if not r.ok:
             discard_part(d); return None, f"could not join: {r.reason}"
         clip = keep_part(self.archive, base.genome.child(text, "fit", f"{base.genome.name} fitted"), d, song, family, describe(r.audio, r.sr))
         joined = song.child("add", f"{stage_name(self.archive, family)} joins", parts={**song.parts, family: clip.id})
-        answered, _ = respond(self.archive, self.songs, joined, family, self.rng, self.use_mind, k=3)
+        answered, _ = respond(self.archive, self.songs, joined, family, self.rng, self.use_mind, k=3, direction=self.direction)
         if answered is not None:
             answered.note = f"{stage_name(self.archive, family)} joins and answers"; answered.author = "add"
             return answered, "joined and answered"
         return joined, "joined"
+
+    def regrid(self, song: Song, tempo: float | None = None) -> tuple[Song | None, str]:
+        """The same song at the conductor's tempo, groove, and scale: every part refitted."""
+        d = self.direction
+        tempo = tempo or d.pick_tempo(self.rng)
+        scale = song.scale or (d.pick_scale(self.rng) or "")
+        child = song.child("grid", f"retaken at {tempo:.0f} bpm" + (f", {d.groove}" if d.groove != "free" else "") + (f", {scale}" if scale else ""), tempo=tempo)
+        child.scale, child.root_hz, child.groove = scale, d.root_hz, d.groove
+        parts = {}
+        for fam, cid in song.parts.items():
+            base = self.archive.clips.get(cid)
+            if base is None:
+                continue
+            k = song.seconds / child.seconds
+            text = fit_to_grid(base.genome.text, child.seconds, child.beat, quantize=True, rng=self.rng,
+                               groove=child.groove if child.groove != "free" else None, scale=child.scale or None, root_hz=child.root_hz)
+            r, dd = hear_part(self.archive, text, child)
+            if not r.ok:
+                discard_part(dd); continue
+            clip = keep_part(self.archive, base.genome.child(text, "fit", f"{base.genome.name or 'part'} retaken"), dd, child, fam, describe(r.audio, r.sr))
+            parts[fam] = clip.id
+        if not parts:
+            return None, "no part survived the new grid"
+        child.parts = parts
+        return child, "regridded"
 
     def drop_player(self, song: Song) -> tuple[Song | None, str]:
         if len(song.parts) < 2:
@@ -149,19 +185,23 @@ class Band:
             parent = self.rng.choices(pool, weights=[max(1e-3, weights.get(s.id, 1.0)) for s in pool])[0] if weights else self.rng.choice(pool)
             r = self.rng.random()
             child, why = None, ""
-            if r < 0.7 or len(parent.parts) < 2:
+            lo, hi = sorted(self.direction.tempo[:2]) if len(self.direction.tempo) >= 2 else (0, 999)
+            off_grid = not (lo <= parent.tempo <= hi) or (self.direction.pitch != "free" and not parent.scale)
+            if r < 0.65 or len(parent.parts) < 2:
                 family = self.rng.choice(sorted(parent.parts))
-                child, why = respond(self.archive, self.songs, parent, family, self.rng, self.use_mind, k=3, verbose=self.verbose)
-            elif r < 0.8:
+                child, why = respond(self.archive, self.songs, parent, family, self.rng, self.use_mind, k=3, verbose=self.verbose, direction=self.direction)
+            elif r < 0.75 and off_grid:
+                child, why = self.regrid(parent)
+            elif r < 0.85:
                 child, why = self.swap_part(parent, self.rng.choice(sorted(parent.parts)))
-            elif r < 0.9:
+            elif r < 0.93:
                 child, why = self.add_player(parent)
             else:
                 child, why = self.drop_player(parent)
             if child is None:
                 self.say(f"  x {parent.name}: {why}")
                 continue
-            child.name = parent.name if child.author == "respond" else self.name_song() if child.author in ("add", "drop") else parent.name
+            child.name = self.name_song() if child.author in ("add", "drop") else parent.name
             desc = render_mix(self.archive, self.songs, child)
             if desc is None:
                 self.say(f"  x {child.note}: no mix"); continue

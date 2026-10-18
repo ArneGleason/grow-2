@@ -33,7 +33,9 @@ from . import ARCHIVE_DIR
 from .archive import Archive, Clip, GRID
 from .genome import instrument_labels, score_events
 from .taste import read_events
-from .song import SongArchive, Song, stage_name
+from .song import SongArchive, Song, stage_name, family_palette
+from . import direction as direction_mod
+from .direction import SHAPES, PALETTES, SPACES, GROOVES, PITCHES, MOODS, SCALES
 
 STATIC = Path(__file__).parent / "static"
 
@@ -90,7 +92,9 @@ def _players(archive: Archive, prefs: dict[str, float]) -> list[dict]:
             d["pref"] = prefs.get(c.id, 0.0)
             d["heard"] = c.id in prefs
             rep.append(d)
-        players.append({"id": rid, "name": stage_name(archive, rid), "founder": founder, "color": i, "repertoire": rep})
+        pal = family_palette(archive, rid)
+        players.append({"id": rid, "name": stage_name(archive, rid), "founder": founder, "color": i, "repertoire": rep,
+                        "palette": pal, "shape": SHAPES.get(pal, "blob")})
     return players
 
 
@@ -104,6 +108,7 @@ def _pick_clip(player: dict, rng: random.Random, exclude: str | None = None) -> 
 def _song_payload(archive: Archive, songs: SongArchive, song: Song, prefs: dict[str, float]) -> dict:
     return {"id": song.id, "name": song.name, "note": song.note, "author": song.author, "generation": song.generation,
             "seconds": song.seconds, "tempo": song.tempo, "bars": song.bars, "status": song.status,
+            "scale": song.scale, "groove": song.groove,
             "parts": {fam: cid for fam, cid in song.parts.items() if cid in archive.clips},
             "pref": prefs.get(song.id, 0.0), "heard": song.id in prefs,
             "lineage": [{"id": a.id, "note": a.note, "author": a.author, "generation": a.generation} for a in songs.lineage(song.id)]}
@@ -188,7 +193,9 @@ class LiveRespond:
             song = b.songs.songs.get(song_id)
             if song is None:
                 job.update(done=True, error="no such song"); return
-            if kind == "join":
+            if kind == "regrid":
+                child, why = b.regrid(song)
+            elif kind == "join":
                 if family in song.parts:
                     # already in this song, only sitting out the scene: bring the part back in
                     job.update(done=True, child=song.id, clip=song.parts[family], note=f"{stage_name(b.archive, family)} comes back in",
@@ -198,7 +205,7 @@ class LiveRespond:
             else:
                 if family not in song.parts:
                     job.update(done=True, error="that player is not in this song"); return
-                child, why = respond(b.archive, b.songs, song, family, b.rng, b.use_mind, k=3, nudge=nudge)
+                child, why = respond(b.archive, b.songs, song, family, b.rng, b.use_mind, k=3, nudge=nudge, direction=b.direction)
             if child is None:
                 job.update(done=True, error=why); return
             child.name = song.name
@@ -333,10 +340,15 @@ def serve(root: Path | str = ARCHIVE_DIR, port: int = 8765) -> None:
                 sa = SongArchive(root)
                 n = max(1, min(12, int(q.get("songs", ["4"])[0])))
                 self._json({"players": players, "songs": _songs(arc, sa, players, n, rng, prefs),
-                            "status": arc.status_lines()[0] + " · " + sa.status_line()})
+                            "status": arc.status_lines()[0] + " · " + sa.status_line(),
+                            "direction": direction_mod.asdict_(direction_mod.load(root))})
+            elif url.path == "/direction":
+                self._json({"direction": direction_mod.asdict_(direction_mod.load(root)),
+                            "options": {"moods": list(MOODS), "palettes": PALETTES, "spaces": SPACES, "grooves": GROOVES,
+                                        "pitches": PITCHES, "scales": list(SCALES)}})
             elif url.path == "/grow":
                 self._json(live.status())
-            elif url.path in ("/respond", "/join"):
+            elif url.path in ("/respond", "/join", "/regrid"):
                 self._json(answering.status(q.get("job", [""])[0]))
             elif url.path == "/jam":
                 self._json(jamming.status())
@@ -354,7 +366,24 @@ def serve(root: Path | str = ARCHIVE_DIR, port: int = 8765) -> None:
                 started = live.start(batch, mind)
                 self._json({"started": started, **live.status()})
                 return
-            if url.path in ("/respond", "/join"):
+            if url.path == "/direction":
+                try:
+                    body = json.loads(raw.decode()) if raw else {}
+                except json.JSONDecodeError:
+                    self.send_response(400); self.end_headers(); return
+                d = direction_mod.load(root)
+                if "mood" in body and body["mood"] != d.mood:
+                    d.apply_mood(str(body["mood"]))
+                for k in ("palette", "space", "tempo", "groove", "pitch", "scale", "root_hz", "words"):
+                    if k in body and body[k] is not None:
+                        setattr(d, k, body[k])
+                d.tempo = [int(float(v)) for v in (d.tempo or [72, 120])[:2]] if isinstance(d.tempo, list) else [72, 120]
+                direction_mod.save(root, d)
+                with (root / "direction.log").open("a") as fh:
+                    fh.write(json.dumps({"time": time.time(), "direction": direction_mod.asdict_(d)}) + "\n")
+                self._json({"direction": direction_mod.asdict_(d)})
+                return
+            if url.path in ("/respond", "/join", "/regrid"):
                 mind = q.get("mind", ["0"])[0] in ("1", "true", "yes")
                 nudge = q.get("nudge", [None])[0]
                 self._json(answering.start(url.path.strip("/"), q.get("song", [""])[0], q.get("player", [""])[0], mind, nudge))

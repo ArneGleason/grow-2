@@ -30,8 +30,10 @@ BEATS_PER_BAR = 4
 
 # stage names for the founders; anything else takes its founder's first word
 STAGE_NAMES = {
-    "drone-additive": "Moss", "fm-bells": "Chime", "grain-weather": "Weather",
-    "noise-drums": "Tick", "pluck-garden": "Pluck", "squelch": "Squelch",
+    "drone-additive": "Moss", "modular-drone": "Moss", "fm-bells": "Chime", "digital-chime": "Chime",
+    "grain-weather": "Weather", "noise-drums": "Tick", "drum-kit": "Tick", "pluck-garden": "Pluck",
+    "squelch": "Squelch", "analog-bass": "Squelch", "pad-dusk": "Dusk", "pulse-wire": "Wire",
+    "voice-moth": "Moth", "glass-bowl": "Bowl",
 }
 
 
@@ -39,6 +41,12 @@ def stage_name(archive: Archive, family: str) -> str:
     root = archive.clips.get(family)
     founder = (root.genome.name if root else family) or family
     return STAGE_NAMES.get(founder, founder.split("-")[0].capitalize() or family)
+
+
+def family_palette(archive: Archive, family: str) -> str:
+    from .direction import palette_of
+    root = archive.clips.get(family)
+    return palette_of(root.genome.text) if root else "digital"
 
 
 @dataclass
@@ -58,6 +66,9 @@ class Song:
     ear: str = "novelty"
     descriptors: dict | None = None
     cell: list[int] | None = None
+    scale: str = ""                       # the scale the band was tuned to, if any
+    root_hz: float = 110.0
+    groove: str = "free"
 
     @property
     def beat(self) -> float:
@@ -68,11 +79,17 @@ class Song:
         return self.bars * BEATS_PER_BAR * self.beat
 
     def grid_text(self) -> str:
-        return f"{self.tempo:.0f} bpm, {self.bars} bars of {BEATS_PER_BAR} beats, {self.seconds:.1f} seconds total"
+        t = f"{self.tempo:.0f} bpm, {self.bars} bars of {BEATS_PER_BAR} beats, {self.seconds:.1f} seconds total"
+        if self.scale:
+            t += f", tuned to {self.scale} on {self.root_hz:.0f} Hz"
+        if self.groove and self.groove != "free":
+            t += f", {self.groove} groove"
+        return t
 
     def child(self, author: str, note: str, parts: dict[str, str] | None = None, tempo: float | None = None, bars: int | None = None) -> "Song":
         return Song(tempo=tempo or self.tempo, bars=bars or self.bars, parts=dict(parts or self.parts),
-                    parent=self.id, generation=self.generation + 1, author=author, note=note)
+                    parent=self.id, generation=self.generation + 1, author=author, note=note,
+                    scale=self.scale, root_hz=self.root_hz, groove=self.groove)
 
 
 # ------------------------------------------------------------- score helpers
@@ -126,7 +143,8 @@ def fnum(s: str) -> float | None:
         return None
 
 
-def fit_to_grid(text: str, seconds: float, beat: float, quantize: bool = True, rng: random.Random | None = None) -> str:
+def fit_to_grid(text: str, seconds: float, beat: float, quantize: bool = True, rng: random.Random | None = None,
+                groove: str | None = None, scale: str | None = None, root_hz: float = 110.0) -> str:
     """Re-time a piece so its score spans the song's length and sits on the beat.
 
     Starts and durations are scaled so the last event ends near `seconds`,
@@ -153,6 +171,13 @@ def fit_to_grid(text: str, seconds: float, beat: float, quantize: bool = True, r
         d = min(d, seconds - s)
         toks[1], toks[2] = f"{s:.3f}", f"{max(d, 0.05):.3f}"
         kept.append((i, toks))
+    if groove or scale:
+        from .direction import groove_rows, tune_rows
+        r = rng or random.Random()
+        if groove:
+            kept, _ = groove_rows(kept, groove, beat, seconds, r)
+        if scale:
+            kept, _ = tune_rows(kept, scale, root_hz)
     return with_score_rows(text, lines, kept)
 
 

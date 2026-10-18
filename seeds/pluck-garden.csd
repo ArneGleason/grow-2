@@ -7,14 +7,16 @@ ksmps = 64
 nchnls = 2
 0dbfs = 1
 
-; plucked strings that ring into a short delay
+; palette: plucked
+; two slightly detuned plucked strings that ring into a short delay
 instr 1
   ifreq = p4
   iamp = p5
   ipan = p6
   kenv linseg 1, p3, 0.0001
-  asig pluck iamp, ifreq, ifreq, 0, 1
-  asig butlp asig, 3200
+  a1 pluck iamp, ifreq, ifreq, 0, 1
+  a2 pluck iamp * 0.6, ifreq * 1.003, ifreq, 0, 1
+  asig butlp a1 + a2, 3600
   adel delay asig, 0.31
   amix = asig + adel * 0.35
   aL, aR pan2 amix * kenv, ipan

@@ -38,6 +38,13 @@
  #hint{color:var(--muted);font-size:11px;display:flex;gap:16px;align-items:center;white-space:nowrap;overflow:hidden}
  #hint b{color:var(--ink);font-weight:500}
  a{color:var(--muted)}
+ #cond{position:absolute;left:14px;bottom:14px;width:300px;background:#1a1915ee;border:1px solid #3a3833;border-radius:10px;padding:12px 14px;display:none;font-size:12px;box-shadow:0 6px 24px #000a}
+ #cond.open{display:block} #cond h3{margin:0 0 8px;font-size:13px;color:var(--warm)}
+ #cond label{display:grid;grid-template-columns:62px 1fr;align-items:center;gap:6px;margin:4px 0}
+ #cond select,#cond input[type=text]{width:100%;background:#262521;color:var(--ink);border:1px solid #3a3833;border-radius:4px;padding:4px 6px;font:inherit}
+ #cond .pal{display:flex;flex-wrap:wrap;gap:4px} #cond .pal span{padding:2px 7px;border:1px solid #3a3833;border-radius:10px;cursor:pointer;color:var(--muted)} #cond .pal span.on{background:#3d3826;color:var(--ink);border-color:#6a5a2a}
+ #cond .row{display:flex;gap:6px;margin-top:8px} #cond .row button{flex:1}
+ #cond .tempo{display:flex;gap:6px;align-items:center} #cond .tempo input{width:54px}
 </style></head><body>
 <div id="app">
  <div id="top">
@@ -58,6 +65,17 @@
  <div id="stagewrap"><canvas id="stage"></canvas>
   <div id="overlay"><div><h2>Grow 2</h2>A band plays songs it wrote together: each part was made in answer to the others. Drag a player forward to hear more of them, back to hear less, sideways to place them; drag a resting player onto the stage and they join the song and answer the others. Double-click to encourage, shift and double-click to discourage. The dial on the right is your mood; hold it low and the player you like least answers the others again, live. Between songs they write more from what you approved.<br><br><button class="big" onclick="start()">start the show</button></div></div>
   <div id="toast"></div>
+  <div id="cond"><h3>your direction</h3>
+   <label><span>mood</span><select id="d_mood"></select></label>
+   <label><span>sound</span><div class="pal" id="d_pal"></div></label>
+   <label><span>space</span><select id="d_space"></select></label>
+   <label><span>tempo</span><div class="tempo"><input type="number" id="d_t0" min="30" max="220"> to <input type="number" id="d_t1" min="30" max="220"> bpm</div></label>
+   <label><span>groove</span><select id="d_groove"></select></label>
+   <label><span>pitch</span><select id="d_pitch"></select></label>
+   <label><span>scale</span><select id="d_scale"></select></label>
+   <label><span>words</span><input type="text" id="d_words" placeholder="anything else, for the mind"></label>
+   <div class="row"><button class="big" onclick="applyDirection()">direct</button><button onclick="regridNow()" title="retake the current song at this tempo, groove and scale">retake song</button><button onclick="toggleCond()">close</button></div>
+  </div>
  </div>
  <div id="side">
   <div class="lbl">love it</div><input id="knob" type="range" min="-100" max="100" value="0" step="1"><div class="lbl">not for me</div>
@@ -65,7 +83,7 @@
   <div id="heard"><div style="color:#6a665c">they heard you:</div></div>
   <div id="growbox"><div>breeding</div><div class="st" id="growst">idle</div></div>
  </div>
- <div id="bottom"><canvas id="roll"></canvas><div id="hint"><span><b>drag</b> move · drag a resting player onto the stage and they join</span><span><b>dbl-click</b> encourage</span><span><b>shift+dbl-click</b> discourage (silence; again to unmute)</span><span><b>&uarr;&darr;</b> dial</span><span><b>space</b> pause</span><span><b>n</b> next scene</span><span><b>esc</b> stop</span><span id="facts" style="margin-left:auto"></span></div></div>
+ <div id="bottom"><canvas id="roll"></canvas><div id="hint"><span><b>drag</b> move · a resting player dragged onto the stage joins</span><span><b>click the conductor</b> to direct</span><span><b>dbl-click</b> encourage</span><span><b>shift+dbl-click</b> discourage (silence; again to unmute)</span><span><b>&uarr;&darr;</b> dial</span><span><b>space</b> pause</span><span><b>n</b> next scene</span><span><b>esc</b> stop</span><span id="facts" style="margin-left:auto"></span></div></div>
 </div>
 <script>
 // ------------------------------------------------------------------ state
@@ -82,6 +100,8 @@ const stage = document.getElementById('stage'), sctx = stage.getContext('2d');
 const roll = document.getElementById('roll'), rctx = roll.getContext('2d');
 const knob = document.getElementById('knob');
 let grabbed = null, grabMoved = false, downAt = 0, hover = null, lastLoop = null;
+let direction = null, dirOptions = null, space = null, lastSongForSpace = null;   // the conductor
+const CHAIR = {x:0.5, depth:-0.08};                      // where the conductor sits: front and center
 let ripples = [];
 
 // ------------------------------------------------------------------ data
@@ -91,7 +111,8 @@ async function loadShow(){
   for (const p of playerList){ for (const c of p.repertoire) clipsById[c.id] = c;
     if (!players[p.id]) players[p.id] = {id:p.id, name:p.name, color:PAL[p.color%PAL.length], x:0.1+0.8*Math.random(), depth:0.92, tx:null, td:null, muted:false,
       encouragedUntil:0, bubble:null, energy:0, cursor:0, sway:Math.random()*6.28, blink:Math.random()*4, lastWander:0, resting:true, pitch:0, hold:0};
-    players[p.id].repertoire = p.repertoire; players[p.id].name = p.name; }
+    players[p.id].repertoire = p.repertoire; players[p.id].name = p.name; players[p.id].shape = p.shape || 'blob'; players[p.id].palette = p.palette || ''; }
+  if (d.direction){ direction = d.direction; if (dirOptions) fillCond(); }
   for (const id of Object.keys(players)) if (!playerList.find(p=>p.id===id)) delete players[id];
   renderSet();
   document.getElementById('subtitle').textContent = d.status;
@@ -120,7 +141,7 @@ function ensureAudio(){
   actx = new (window.AudioContext||window.webkitAudioContext)();
   master = actx.createGain(); master.gain.value = 0.9;
   analyser = actx.createAnalyser(); analyser.fftSize = 512; analyser.smoothingTimeConstant = 0.75;
-  master.connect(analyser); analyser.connect(actx.destination);
+  buildSpace(); analyser.connect(actx.destination);
   fft = new Uint8Array(analyser.frequencyBinCount);
 }
 async function buffer(clipId){
@@ -171,6 +192,7 @@ async function playScene(i, j){
   songIdx = (i + songs.length) % songs.length; song = songs[songIdx];
   sceneIdx = (j + song.scenes.length) % song.scenes.length; scene = song.scenes[sceneIdx];
   sceneSeconds = scene.seconds; sceneExtended = false; sceneStart = actx.currentTime; lowSince = highSince = 0; answering = null;
+  if (space && (space.kind === 'echo' || space.kind === 'space echo') && scene.song !== lastSongForSpace){ lastSongForSpace = scene.song; buildSpace(); }
   renderSet();
   document.getElementById('title').textContent = song.title;
   const who = scene.members.map(m=>players[m.player].name+': '+(clipsById[m.clip]?clipsById[m.clip].name:'?')).join('  ·  ');
@@ -391,12 +413,90 @@ window.addEventListener('mouseup', e=>{ if (!grabbed) return; const p=grabbed; g
     else if (active[p.id]){ send({kind:'move', clip:active[p.id].clip, value:(0.5-p.depth)*2, pos:progress()}); heard('<b>'+esc(p.name)+'</b> moved '+(p.depth<0.35?'up front':p.depth>0.7?'to the back':'to the middle')); }
   } });
 stage.addEventListener('dblclick', e=>{ const {mx,my}=canvasXY(e); const p=playerAt(mx,my); if (!p) return; if (e.shiftKey) toggleMute(p); else encourage(p); });
+stage.addEventListener('click', e=>{ const {mx,my}=canvasXY(e); const c=window._chair; if (c && Math.hypot(mx-c.x, my-c.y) < c.r*1.3 && !grabMoved) toggleCond(); });
 function toggleMute(p){ p.muted = !p.muted; applyMix(p, active[p.id]);
   if (p.muted){ p.bubble={text:'…', until:performance.now()+2500}; p.td = Math.min(0.9, p.depth+0.25); if (active[p.id]) send({kind:'silence', clip:active[p.id].clip, value:-1, pos:progress()}); heard('<b>'+esc(p.name)+'</b> silenced'); }
   else { p.bubble={text:'back', until:performance.now()+2000}; heard('<b>'+esc(p.name)+'</b> unmuted'); } }
 function encourage(p){ if (p.muted) toggleMute(p); p.encouragedUntil = performance.now()+20000; p.td = Math.max(0.05, p.depth-0.3); p.bubble={text:'!', until:performance.now()+2500}; applyMix(p, active[p.id]);
   if (active[p.id]) send({kind:'encourage', clip:active[p.id].clip, value:1, pos:progress()}); heard('<b>'+esc(p.name)+'</b> encouraged'); }
 
+// ------------------------------------------------------------------ the space (reverb, echo) on the mix
+function impulse(seconds, decay){ const n = Math.floor(actx.sampleRate*seconds), b = actx.createBuffer(2, n, actx.sampleRate);
+  for (let c=0;c<2;c++){ const d=b.getChannelData(c); for(let i=0;i<n;i++){ d[i] = (Math.random()*2-1) * Math.pow(1 - i/n, decay); } } return b; }
+function buildSpace(){
+  // master -> dry -> analyser ; master -> wet chain -> analyser
+  if (space){ try { space.dry.disconnect(); space.wet.disconnect(); space.input.disconnect(); } catch(e){} }
+  const dry = actx.createGain(), wet = actx.createGain(), input = actx.createGain();
+  master.disconnect(); master.connect(input); input.connect(dry); dry.connect(analyser);
+  const kind = direction ? direction.space : 'room';
+  let chain = null;
+  if (kind === 'room' || kind === 'hall'){ const conv = actx.createConvolver(); conv.buffer = impulse(kind==='hall'?3.2:1.1, kind==='hall'?2.2:3.5); input.connect(conv); conv.connect(wet); wet.gain.value = kind==='hall'?0.42:0.22; chain = conv; }
+  else if (kind === 'echo' || kind === 'space echo'){ const beat = scene && scene.loop && song && song.song ? 60/(song.song.tempo||100) : 0.5;
+    const del = actx.createDelay(2.0); del.delayTime.value = kind==='echo' ? beat*0.75 : beat*0.667; const fb = actx.createGain(); fb.gain.value = kind==='echo'?0.38:0.55;
+    const lp = actx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value = kind==='echo'?5000:2600;
+    input.connect(del); del.connect(lp); lp.connect(fb); fb.connect(del); lp.connect(wet); wet.gain.value = kind==='echo'?0.35:0.45;
+    if (kind === 'space echo'){ const lfo = actx.createOscillator(), lg = actx.createGain(); lfo.frequency.value = 0.3; lg.gain.value = 0.004; lfo.connect(lg); lg.connect(del.delayTime); lfo.start(); }
+    chain = del; }
+  else { wet.gain.value = 0; }
+  wet.connect(analyser);
+  space = {dry, wet, input, kind};
+}
+// ------------------------------------------------------------------ direction
+async function loadDirection(){ const d = await (await fetch('/direction')).json(); direction = d.direction; dirOptions = d.options; fillCond(); if (actx) buildSpace(); }
+function fillCond(){
+  const sel = (id, opts, val) => { const e=document.getElementById(id); e.innerHTML=''; for (const o of opts){ const op=document.createElement('option'); op.value=o; op.textContent=o; if(o===val) op.selected=true; e.appendChild(op);} };
+  sel('d_mood', dirOptions.moods, direction.mood); sel('d_space', dirOptions.spaces, direction.space); sel('d_groove', dirOptions.grooves, direction.groove);
+  sel('d_pitch', dirOptions.pitches, direction.pitch); sel('d_scale', ['(any)'].concat(dirOptions.scales), direction.scale || '(any)');
+  document.getElementById('d_t0').value = direction.tempo[0]; document.getElementById('d_t1').value = direction.tempo[1]; document.getElementById('d_words').value = direction.words || '';
+  const pal = document.getElementById('d_pal'); pal.innerHTML=''; for (const p of dirOptions.palettes){ const sp=document.createElement('span'); sp.textContent=p; if ((direction.palette||[]).includes(p)) sp.className='on'; sp.onclick=()=>sp.classList.toggle('on'); pal.appendChild(sp); }
+  document.getElementById('d_mood').onchange = async ()=>{ const r = await (await fetch('/direction',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mood:document.getElementById('d_mood').value})})).json(); direction = r.direction; fillCond(); if (actx) buildSpace(); };
+}
+function toggleCond(){ document.getElementById('cond').classList.toggle('open'); }
+async function applyDirection(){
+  const body = { mood: document.getElementById('d_mood').value, space: document.getElementById('d_space').value, groove: document.getElementById('d_groove').value,
+    pitch: document.getElementById('d_pitch').value, scale: (document.getElementById('d_scale').value==='(any)'?'':document.getElementById('d_scale').value),
+    tempo: [parseInt(document.getElementById('d_t0').value)||72, parseInt(document.getElementById('d_t1').value)||120], words: document.getElementById('d_words').value,
+    palette: Array.from(document.querySelectorAll('#d_pal span.on')).map(e=>e.textContent) };
+  const r = await (await fetch('/direction',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+  direction = r.direction; fillCond(); if (actx) buildSpace();
+  toast('direction: '+summarizeDirection()); heard('you asked for <b>'+esc(summarizeDirection())+'</b>');
+  for (const p of Object.values(players)) p.bubble = {text:'noted', until:performance.now()+2500};
+}
+function summarizeDirection(){ if (!direction) return ''; const b=[]; if (direction.mood!=='open') b.push(direction.mood); if ((direction.palette||[]).length) b.push(direction.palette.join('/')); b.push(direction.space); b.push(direction.tempo[0]+'-'+direction.tempo[1]+' bpm'); if (direction.groove!=='free') b.push(direction.groove); if (direction.pitch!=='free') b.push(direction.scale||direction.pitch); if (direction.words) b.push('"'+direction.words+'"'); return b.join(' · '); }
+async function regridNow(){
+  if (!scene || !scene.song || answering) { toast('nothing playing yet'); return; }
+  const mind = document.getElementById('usemind').checked;
+  const r = await (await fetch('/regrid?song='+scene.song+'&player=x&mind='+(mind?1:0), {method:'POST'})).json();
+  if (!r.started) return; answering = r.job; for (const m of scene.members) players[m.player].bubble = {text:'retaking…', until:performance.now()+60000};
+  const poll = setInterval(async ()=>{ const st = await (await fetch('/regrid?job='+answering)).json(); if (!st.done) return; clearInterval(poll); answering = null;
+    if (st.error){ heard('could not retake: '+esc(st.error)); return; }
+    heard('<b>'+esc(st.note)+'</b>'+(st.kept?' · kept on the map':''));
+    await newShow(); }, 1500);
+}
+// ------------------------------------------------------------------ silhouettes
+function shapePath(ctx, kind, x, y, r, sq){
+  ctx.beginPath();
+  if (kind==='square'){ const k=r*0.92; ctx.roundRect ? ctx.roundRect(x-k, y-k*sq, 2*k, 2*k*sq, r*0.3) : ctx.rect(x-k, y-k*sq, 2*k, 2*k*sq); }
+  else if (kind==='hex'){ for(let i=0;i<6;i++){ const a=Math.PI/3*i+Math.PI/6; const px=x+Math.cos(a)*r*1.05, py=y+Math.sin(a)*r*1.05*sq; i?ctx.lineTo(px,py):ctx.moveTo(px,py);} ctx.closePath(); }
+  else if (kind==='diamond'){ ctx.moveTo(x, y-r*1.15*sq); ctx.lineTo(x+r*1.05, y); ctx.lineTo(x, y+r*1.15*sq); ctx.lineTo(x-r*1.05, y); ctx.closePath(); }
+  else if (kind==='teardrop'){ ctx.moveTo(x, y-r*1.35*sq); ctx.quadraticCurveTo(x+r*1.1, y-r*0.2, x+r*0.75, y+r*0.55*sq); ctx.quadraticCurveTo(x, y+r*1.2*sq, x-r*0.75, y+r*0.55*sq); ctx.quadraticCurveTo(x-r*1.1, y-r*0.2, x, y-r*1.35*sq); }
+  else if (kind==='cloud'){ ctx.arc(x-r*0.45, y+r*0.1, r*0.6, 0, 6.283); ctx.arc(x+r*0.1, y-r*0.35, r*0.7, 0, 6.283); ctx.arc(x+r*0.55, y+r*0.15, r*0.55, 0, 6.283); ctx.arc(x, y+r*0.35, r*0.65, 0, 6.283); }
+  else if (kind==='pill'){ ctx.roundRect ? ctx.roundRect(x-r*1.25, y-r*0.7*sq, r*2.5, r*1.4*sq, r*0.7) : ctx.rect(x-r*1.25, y-r*0.7*sq, r*2.5, r*1.4*sq); }
+  else if (kind==='egg'){ ctx.ellipse(x, y-r*0.1, r*0.85, r*1.1*sq, 0, 0, 6.283); }
+  else if (kind==='triangle'){ ctx.moveTo(x, y-r*1.15*sq); ctx.lineTo(x+r*1.1, y+r*0.8*sq); ctx.lineTo(x-r*1.1, y+r*0.8*sq); ctx.closePath(); }
+  else { ctx.ellipse(x, y, r, r*sq, 0, 0, 6.283); }
+}
+function drawConductor(){
+  const W=stage.width, H=stage.height; const x = W*CHAIR.x, y = H*(0.30+0.52*(1-CHAIR.depth)) - 6, r = Math.min(W,H)*0.05;
+  const open = document.getElementById('cond').classList.contains('open');
+  sctx.fillStyle = 'rgba(0,0,0,.3)'; sctx.beginPath(); sctx.ellipse(x, y+r*0.95, r*0.9, r*0.22, 0, 0, 6.283); sctx.fill();
+  sctx.fillStyle = open ? '#e8c36a' : '#6a655a'; sctx.beginPath(); sctx.arc(x, y, r*0.75, 0, 6.283); sctx.fill();           // head
+  sctx.strokeStyle = open ? '#e8c36a' : '#6a655a'; sctx.lineWidth = 3; sctx.lineCap='round';
+  sctx.beginPath(); sctx.moveTo(x-r*0.9, y+r*0.2); sctx.lineTo(x-r*1.6, y-r*0.9+Math.sin(performance.now()/400)*4); sctx.stroke();   // the arm with the baton
+  sctx.fillStyle = 'rgba(234,230,220,.7)'; sctx.font = `${Math.max(11, r*0.3)|0}px system-ui`; sctx.textAlign='center';
+  sctx.fillText('you · ' + (direction ? (summarizeDirection() || 'no direction yet') : ''), x, y + r*1.6);
+  return {x, y, r};
+}
 function draw(ts){
   requestAnimationFrame(draw);
   const W=stage.width, H=stage.height; const now = ts;
@@ -434,7 +534,7 @@ function draw(ts){
     const s = stagePos(p); const r = s.r*(1+en*0.25); const x = s.px, y = s.py + Math.sin(p.sway)*2 - (p.hold? en*5:0);
     const dim = p.resting ? 0.35 : p.muted ? 0.55 : 1;
     sctx.fillStyle='rgba(0,0,0,.35)'; sctx.beginPath(); sctx.ellipse(x, s.py + s.r*0.95, r*0.9, r*0.22, 0, 0, 6.283); sctx.fill();
-    sctx.save(); sctx.globalAlpha = dim; sctx.fillStyle = p.color; sctx.shadowColor = p.color; sctx.shadowBlur = 16*en + (hover===p?10:0); sctx.beginPath(); sctx.ellipse(x, y, r*(1+en*0.05), r*(1-en*0.08), 0, 0, 6.283); sctx.fill(); sctx.restore();
+    sctx.save(); sctx.globalAlpha = dim; sctx.fillStyle = p.color; sctx.shadowColor = p.color; sctx.shadowBlur = 16*en + (hover===p?10:0); shapePath(sctx, p.shape, x, y, r*(1+en*0.05), (1-en*0.08)); sctx.fill(); sctx.restore();
     if (hover===p || grabbed===p){ sctx.strokeStyle='#f1ece0'; sctx.lineWidth=2; sctx.beginPath(); sctx.arc(x,y,r*1.12,0,6.283); sctx.stroke(); }
     const look = dial*0.35, ex=r*0.33, ey=-r*0.12, er=r*0.17; const closed = p.blink<0 || p.resting;
     for (const sgn of [-1,1]){ sctx.fillStyle='#f6f2e8'; sctx.beginPath(); sctx.ellipse(x+sgn*ex, y+ey, er, closed? er*0.08: er*1.15, 0,0,6.283); sctx.fill();
@@ -445,11 +545,12 @@ function draw(ts){
     if (p.muted){ sctx.strokeStyle='#d98a7a'; sctx.lineWidth=3; sctx.beginPath(); sctx.moveTo(x-mw*1.1, my+r*0.2); sctx.lineTo(x+mw*1.1, my-r*0.2); sctx.stroke(); }
     sctx.fillStyle = `rgba(234,230,220,${0.45+0.4*(1-p.depth)})`; sctx.font = `${Math.max(11, r*0.3)|0}px system-ui`; sctx.textAlign='center';
     const labelY = s.py + r*1.55 < H - 8 ? s.py + r*1.55 : y - r*1.35;   // keep the name on screen when up front
-    sctx.fillText(p.name + (clip && !p.resting ? '  ·  ' + clip.name : ''), x, labelY);
+    sctx.fillText(p.name + (clip && !p.resting ? '  ·  ' + clip.name : (p.palette ? '  ·  ' + p.palette : '')), x, labelY);
     if (p.bubble && p.bubble.until > now){ sctx.font='12px system-ui'; const tw = sctx.measureText(p.bubble.text).width + 16; const bx = x, by = Math.max(18, y - r*1.5 - (labelY < y ? 18 : 0));
       sctx.fillStyle='#f1ece0'; sctx.beginPath(); sctx.roundRect ? sctx.roundRect(bx-tw/2, by-13, tw, 22, 8) : sctx.rect(bx-tw/2, by-13, tw, 22); sctx.fill();
       sctx.fillStyle='#1a1508'; sctx.font='12px system-ui'; sctx.fillText(p.bubble.text, bx, by+3); }
   }
+  const chair = drawConductor(); window._chair = chair;
   for (const rp of ripples){ rp.r += 2.2; rp.a *= 0.93; sctx.strokeStyle=rp.color; sctx.globalAlpha=rp.a; sctx.lineWidth=2; sctx.beginPath(); sctx.arc(rp.x, rp.y, rp.r, 0, 6.283); sctx.stroke(); }
   sctx.globalAlpha = 1; ripples = ripples.filter(r=>r.a>0.02);
   if (inBreak){ sctx.fillStyle='#8a847a'; sctx.font='15px system-ui'; sctx.textAlign='center'; sctx.fillText('…', W/2, H*0.2); }
@@ -465,5 +566,5 @@ function drawRoll(){
     x += w; });
 }
 requestAnimationFrame(draw);
-loadShow();
+loadDirection().then(loadShow);
 </script></body></html>
