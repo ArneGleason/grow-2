@@ -547,7 +547,8 @@ function draw(ts){
     if (p.muted){ sctx.strokeStyle='#d98a7a'; sctx.lineWidth=3; sctx.beginPath(); sctx.moveTo(x-mw*1.1, my+r*0.2); sctx.lineTo(x+mw*1.1, my-r*0.2); sctx.stroke(); }
     sctx.fillStyle = `rgba(234,230,220,${0.45+0.4*(1-p.depth)})`; sctx.font = `${Math.max(11, r*0.3)|0}px system-ui`; sctx.textAlign='center';
     const labelY = s.py + r*1.55 < H - 8 ? s.py + r*1.55 : y - r*1.35;   // keep the name on screen when up front
-    sctx.fillText(p.resting ? p.name : p.name + (clip ? '  ·  ' + clip.name : ''), x, labelY);
+    const short = clip && clip.name.length > 26 ? clip.name.slice(0, 25) + '…' : (clip ? clip.name : '');
+    sctx.fillText(p.resting ? p.name : p.name + (short ? '  ·  ' + short : ''), x, labelY);
     if (p.bubble && p.bubble.until > now){ sctx.font='12px system-ui'; const tw = sctx.measureText(p.bubble.text).width + 16; const bx = x, by = Math.max(18, y - r*1.5 - (labelY < y ? 18 : 0));
       sctx.fillStyle='#f1ece0'; sctx.beginPath(); sctx.roundRect ? sctx.roundRect(bx-tw/2, by-13, tw, 22, 8) : sctx.rect(bx-tw/2, by-13, tw, 22); sctx.fill();
       sctx.fillStyle='#1a1508'; sctx.font='12px system-ui'; sctx.fillText(p.bubble.text, bx, by+3); }
